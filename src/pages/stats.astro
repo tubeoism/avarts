@@ -1,0 +1,763 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { loadActivities } from '../lib/data.mjs';
+import {
+  sumTotals,
+  typeBreakdown,
+  dailyTypeBuckets,
+  monthlyTypeBuckets,
+  yearlyTypeBreakdown,
+  habitScatterPoints,
+  heatmapActivityPoints,
+} from '../lib/stats.mjs';
+import { formatDuration, formatDistance, formatNumber } from '../lib/format.js';
+import { t, DEFAULT_LANG, activityTypeLabel } from '../lib/i18n.js';
+import T from '../components/T.astro';
+import ChartHeading from '../components/ChartHeading.astro';
+
+const activities = loadActivities();
+const allTime = sumTotals(activities);
+const typeCounts = typeBreakdown(activities);
+
+const STAT_GROUPS = [
+  { group: 'Run', types: ['Run'], metric: 'km' },
+  { group: 'Ride', types: ['Ride'], metric: 'km' },
+  { group: 'Swim', types: ['Swim'], metric: 'km' },
+  { group: 'Walk', types: ['Walk'], metric: 'km' },
+  // Weight Training/Workout/Yoga all have distanceKm: 0 - Calories is the meaningful volume
+  // metric for this group, not distance.
+  { group: 'Crossfit', types: ['Weight Training', 'Workout', 'Yoga'], metric: 'calories' },
+];
+const groupTotals = STAT_GROUPS.map((g) => ({
+  ...g,
+  totals: sumTotals(activities.filter((a) => g.types.includes(a.type))),
+}));
+// Run/Ride/Swim are the primary distance-based groups (blue); Walk/Crossfit are supplementary
+// (yellow) - same visual language as the Dashboard's current/previous-period cards.
+const CARD_TONE = { Run: 'blue', Ride: 'blue', Swim: 'blue', Walk: 'yellow', Crossfit: 'yellow' };
+
+const dailySeries = dailyTypeBuckets(activities); // continuous timeline, ascending by day
+const monthlySeries = monthlyTypeBuckets(activities); // continuous timeline, ascending by month
+const monthlySeriesYears = [...new Set(monthlySeries.map((m) => m.year))].sort((a, b) => b - a); // newest first, for <select> options
+const yearlyTypes = yearlyTypeBreakdown(activities); // also doubles as the year-granularity volume series
+
+const habitPoints = habitScatterPoints(activities);
+const runHeatmapPoints = heatmapActivityPoints(activities, 'Run');
+const rideHeatmapPoints = heatmapActivityPoints(activities, 'Ride');
+// Every calendar year with at least one activity, oldest first - the shared year->palette-slot
+// basis for every "one series per calendar year" scatter chart on this page, so a given year
+// reads as the same categorical color everywhere regardless of which chart or activity-type/
+// metric filter is showing it (see the client script's seriesVisual() usage below).
+const allYears = yearlyTypes.map((y) => y.year);
+const dowLabelsBoth = { vi: t('vi', 'common.dow'), en: t('en', 'common.dow') };
+
+---
+<Layout titleKey="nav.stats">
+  <h1><T key="stats.title" /></h1>
+  <p class="subtitle"><T key="stats.subtitle" vars={{ count: activities.length }} /></p>
+
+  <div class="grid">
+    <div class="stat-card stat-card-purple">
+      <div class="label"><T key="common.all" /></div>
+      <div class="value" data-unit="distance" data-value={allTime.km}>{formatDistance(allTime.km)}</div>
+      <div class="subtitle" style="margin:0">{formatDuration(allTime.movingTimeSec)} · {allTime.count} <T key="unit.session" /></div>
+    </div>
+    {groupTotals.map((g) => (
+      <div class={`stat-card stat-card-${CARD_TONE[g.group]}`}>
+        <div class="label"><T key={g.group === 'Crossfit' ? 'goalGroup.crossfit' : `activityType.${g.group}`} /></div>
+        <div class="value" data-unit={g.metric === 'calories' ? undefined : 'distance'} data-value={g.metric === 'calories' ? undefined : g.totals.km}>
+          {g.metric === 'calories' ? `${formatNumber(g.totals.calories)} ${t(DEFAULT_LANG, 'common.calories')}` : formatDistance(g.totals.km)}
+        </div>
+        <div class="subtitle" style="margin:0">{formatDuration(g.totals.movingTimeSec)} · {g.totals.count} <T key="unit.session" /></div>
+      </div>
+    ))}
+  </div>
+
+  <div class="card">
+    <h2><T key="dashboard.typeBreakdownHeading" /></h2>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <label class="subtitle" style="margin:0" for="type-year-select"><T key="common.year" /></label>
+      <select id="type-year-select"
+        data-all={JSON.stringify(typeCounts)}
+        data-by-year={JSON.stringify(yearlyTypes)}>
+        <option value="all" selected data-i18n="common.all">{t(DEFAULT_LANG, 'common.all')}</option>
+        {[...yearlyTypes].reverse().map((y) => (
+          <option value={y.year}>{y.year}</option>
+        ))}
+      </select>
+    </div>
+    <div class="three-col">
+      <div class="card">
+        <h2><T key="stats.sessionsByTypeHeading" /></h2>
+        <div class="chart-box">
+          <canvas id="type-count-chart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <h2><T key="stats.timeByTypeHeading" /></h2>
+        <div class="chart-box">
+          <canvas id="type-time-chart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <h2><T key="stats.caloriesByTypeHeading" /></h2>
+        <div class="chart-box">
+          <canvas id="type-calories-chart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="stats.volumeOverTimeHeading"><T key="stats.volumeComboCaption" /></ChartHeading>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <div class="filters" data-toggle="volume-granularity" style="margin-bottom:0">
+        <button type="button" data-value="day"><T key="stats.dayBtn" /></button>
+        <button type="button" data-value="month" class="active"><T key="stats.monthBtn" /></button>
+        <button type="button" data-value="year"><T key="stats.yearBtn" /></button>
+      </div>
+      <label class="subtitle" style="margin:0" for="year-range-select"><T key="common.timeRange" /></label>
+      <select id="year-range-select"
+        data-daily={JSON.stringify(dailySeries)}
+        data-monthly={JSON.stringify(monthlySeries)}
+        data-yearly={JSON.stringify(yearlyTypes)}>
+        <option value="all" selected data-i18n="common.allYears">{t(DEFAULT_LANG, 'common.allYears')}</option>
+        <option value="last3" data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 3 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 3 })}</option>
+        <option value="last5" data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 5 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 5 })}</option>
+        {monthlySeriesYears.map((y) => (
+          <option value={y} data-year="true">{y}</option>
+        ))}
+      </select>
+    </div>
+    <div class="chart-box chart-box-xl">
+      <canvas id="monthly-combo-chart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="stats.heatmapDistHeading"><T key="stats.heatmapCaption" /></ChartHeading>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <label class="subtitle" style="margin:0" for="heatmap-type-select"><T key="common.type" /></label>
+      <select id="heatmap-type-select">
+        <option value="Run" selected data-i18n="activityType.Run">{activityTypeLabel(DEFAULT_LANG, 'Run')}</option>
+        <option value="Ride" data-i18n="activityType.Ride">{activityTypeLabel(DEFAULT_LANG, 'Ride')}</option>
+      </select>
+      <label class="subtitle" style="margin:0" for="heatmap-metric-select"><T key="stats.metricAxisLabel" /></label>
+      <select id="heatmap-metric-select"></select>
+      <label class="subtitle" style="margin:0" for="heatmap-range-select"><T key="stats.timelineAxisLabel" /></label>
+      <select id="heatmap-range-select">
+        <option value="all" data-i18n="common.all">{t(DEFAULT_LANG, 'common.all')}</option>
+        <option value="6m" data-i18n="common.lastNMonths" data-i18n-vars={JSON.stringify({ n: 6 })}>{t(DEFAULT_LANG, 'common.lastNMonths', { n: 6 })}</option>
+        <option value="1y" data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 1 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 1 })}</option>
+        <option value="2y" data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 2 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 2 })}</option>
+        <option value="5y" selected data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 5 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 5 })}</option>
+      </select>
+    </div>
+    <div class="chart-box chart-box-lg">
+      <canvas id="metric-heatmap-chart"
+        data-run={JSON.stringify(runHeatmapPoints)}
+        data-ride={JSON.stringify(rideHeatmapPoints)}
+        data-years={JSON.stringify(allYears)}></canvas>
+    </div>
+    <p class="subtitle" id="metric-heatmap-empty" style="margin-top:10px" hidden><T key="stats.noDataForSelection" /></p>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="stats.habitHeading"><T key="stats.habitCaption" /></ChartHeading>
+    <div class="chart-box chart-box-lg">
+      <canvas id="habit-scatter"
+        data-points={JSON.stringify(habitPoints)}
+        data-dow-labels={JSON.stringify(dowLabelsBoth)}
+        data-years={JSON.stringify(allYears)}></canvas>
+    </div>
+  </div>
+
+</Layout>
+
+<script>
+  import Chart from 'chart.js/auto';
+  import { onThemeChange, themeColors, currentTheme } from '../lib/theme.js';
+  import { toVnDate, vnMidnightUtc, formatDate, formatDuration, formatNumber, KM_PER_MILE } from '../lib/format.js';
+  import { currentUnitSystem } from '../lib/units.js';
+  import { seriesVisual, barValueLabelsPlugin, readCanvas, dataOf, yearIndexOf, fmtInt, fmtPace, identity } from '../lib/charts.js';
+  import { t, activityTypeLabel } from '../lib/i18n.js';
+  import { currentLang } from '../lib/lang.js';
+
+  const fmtKm = (v) => (Math.round(v * 10) / 10).toString();
+
+  function baseScales(c, xTicks = {}) {
+    return {
+      x: { ticks: { color: c.onSurfaceVariant, maxRotation: 0, autoSkip: true, ...xTicks }, grid: { display: false } },
+      y: { ticks: { color: c.onSurfaceVariant }, grid: { color: c.outlineVariant } },
+    };
+  }
+
+  /** Scales for a horizontal bar chart (indexAxis: 'y') - value axis is x, category axis is y,
+   * the reverse of baseScales. */
+  function hBarScales(c) {
+    return {
+      x: { ticks: { color: c.onSurfaceVariant }, grid: { color: c.outlineVariant } },
+      y: { ticks: { color: c.onSurfaceVariant }, grid: { display: false } },
+    };
+  }
+
+  // Run/Ride metric-vs-time scatter: one semi-transparent dot per activity, X = when it
+  // happened, Y = the chosen metric's value - replacing the old single-purpose elevation-by-
+  // month and Run-cadence-histogram charts with one chart covering distance/pace-or-speed/HR/
+  // power/cadence/elevation for either Run or Ride. No binning/aggregation happens - overlapping
+  // dots simply read as denser (same technique as the habit-scatter chart above: alpha-blended
+  // points standing in for a count), which is the "heatmap" effect at a glance while every point
+  // stays a real, hoverable activity.
+  {
+    const canvas = readCanvas('metric-heatmap-chart');
+    const typeSelect = document.getElementById('heatmap-type-select');
+    const metricSelect = document.getElementById('heatmap-metric-select');
+    const rangeSelect = document.getElementById('heatmap-range-select');
+    const emptyNote = document.getElementById('metric-heatmap-empty');
+    if (canvas && typeSelect && metricSelect && rangeSelect) {
+      const pointsByType = { Run: dataOf(canvas, 'run'), Ride: dataOf(canvas, 'ride') };
+      const yearIndex = yearIndexOf(canvas);
+
+      // convert() runs on the raw metric value BEFORE it's plotted/formatted, so distance/pace/
+      // speed metrics read in the current unit system - label() picks the matching axis text
+      // (now also a function of language, not just unit system). Non-distance metrics (HR/watts/
+      // cadence/elevation) pass through unchanged either way.
+      const metricsFor = (lang) => ({
+        Run: [
+          { key: 'distanceKm', label: (u) => t(lang, 'stats.metricDistanceLabel', { unit: u === 'imperial' ? 'mi' : 'km' }), fmt: fmtKm, convert: (v, u) => (u === 'imperial' ? v / KM_PER_MILE : v) },
+          { key: 'paceMinPerKm', label: (u) => t(lang, 'stats.metricPaceLabel', { unit: u === 'imperial' ? 'mi' : 'km' }), fmt: fmtPace, convert: (v, u) => (u === 'imperial' ? v * KM_PER_MILE : v) },
+          { key: 'avgHeartRate', label: t(lang, 'chartMetric.avgHeartRate'), fmt: fmtInt, convert: identity },
+          { key: 'avgWatts', label: t(lang, 'chartMetric.avgWatts'), fmt: fmtInt, convert: identity },
+          { key: 'avgCadence', label: t(lang, 'stats.metricCadenceLabel', { unit: t(lang, 'unit.cadenceSteps') }), fmt: fmtInt, convert: identity },
+          { key: 'elevationGain', label: t(lang, 'chartMetric.elevationGain'), fmt: fmtInt, convert: identity },
+        ],
+        Ride: [
+          { key: 'distanceKm', label: (u) => t(lang, 'stats.metricDistanceLabel', { unit: u === 'imperial' ? 'mi' : 'km' }), fmt: fmtKm, convert: (v, u) => (u === 'imperial' ? v / KM_PER_MILE : v) },
+          { key: 'speedKmh', label: (u) => t(lang, 'stats.metricSpeedLabel', { unit: u === 'imperial' ? 'mph' : 'km/h' }), fmt: fmtInt, convert: (v, u) => (u === 'imperial' ? v / KM_PER_MILE : v) },
+          { key: 'avgHeartRate', label: t(lang, 'chartMetric.avgHeartRate'), fmt: fmtInt, convert: identity },
+          { key: 'avgWatts', label: t(lang, 'chartMetric.avgWatts'), fmt: fmtInt, convert: identity },
+          { key: 'avgCadence', label: t(lang, 'stats.metricCadenceLabel', { unit: t(lang, 'unit.cadenceRpm') }), fmt: fmtInt, convert: identity },
+          { key: 'elevationGain', label: t(lang, 'chartMetric.elevationGain'), fmt: fmtInt, convert: identity },
+        ],
+      });
+      // Rolling day-count windows anchor to the LATEST activity of the selected type, not the
+      // viewer's real-world clock - same "anchor to the data, not `new Date()`" convention as
+      // /performance's monthlyMetricComboChart shiftMonth usage.
+      // Tick granularity grows with the window (week/month/quarter/year) so the X-axis always
+      // gets a handful of readable, calendar-aligned ticks regardless of span.
+      const RANGE_CONFIG = {
+        '6m': { days: 182, period: 'week' },
+        '1y': { days: 365, period: 'month' },
+        '2y': { days: 730, period: 'month' },
+        '5y': { days: 1825, period: 'quarter' },
+      };
+
+      // One key/step/start/label quartet per tick granularity. Keys are zero-padded strings that
+      // sort correctly with plain `<`/`<=` (ISO-ish) so periodSeq() can walk key to key without a
+      // date library; startMs() turns a key back into the real Vietnam-local UTC instant (via
+      // vnMidnightUtc) used as that tick's X position.
+      const PERIODS = {
+        week: {
+          keyOf(iso) {
+            const vn = toVnDate(iso);
+            const dow = (vn.getUTCDay() + 6) % 7; // Monday = 0, matches stats.mjs's startOfWeek
+            return new Date(Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate() - dow)).toISOString().slice(0, 10);
+          },
+          next: (key) => new Date(new Date(`${key}T00:00:00Z`).getTime() + 7 * 86400000).toISOString().slice(0, 10),
+          startMs: (key) => { const [y, m, d] = key.split('-').map(Number); return vnMidnightUtc(y, m - 1, d).getTime(); },
+          label: (key) => { const [y, m, d] = key.split('-'); return `${d}/${m}/${y.slice(2)}`; },
+        },
+        month: {
+          keyOf: (iso) => { const vn = toVnDate(iso); return `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, '0')}`; },
+          next: (key) => { let [y, m] = key.split('-').map(Number); m++; if (m > 12) { m = 1; y++; } return `${y}-${String(m).padStart(2, '0')}`; },
+          startMs: (key) => { const [y, m] = key.split('-').map(Number); return vnMidnightUtc(y, m - 1, 1).getTime(); },
+          label: (key) => key,
+        },
+        quarter: {
+          keyOf: (iso) => { const vn = toVnDate(iso); return `${vn.getUTCFullYear()}-Q${Math.floor(vn.getUTCMonth() / 3) + 1}`; },
+          next: (key) => { let [y, q] = key.split('-Q').map(Number); q++; if (q > 4) { q = 1; y++; } return `${y}-Q${q}`; },
+          startMs: (key) => { const [y, q] = key.split('-Q').map(Number); return vnMidnightUtc(y, (q - 1) * 3, 1).getTime(); },
+          label: (key) => { const [y, q] = key.split('-Q'); return `Q${q}/${y}`; },
+        },
+        year: {
+          keyOf: (iso) => String(toVnDate(iso).getUTCFullYear()),
+          next: (key) => String(Number(key) + 1),
+          startMs: (key) => vnMidnightUtc(Number(key), 0, 1).getTime(),
+          label: (key) => key,
+        },
+      };
+      function periodSeq(period, fromKey, toKey) {
+        const seq = [];
+        for (let k = fromKey; k <= toKey && seq.length < 500; k = period.next(k)) seq.push(k);
+        return seq;
+      }
+
+      function populateMetricOptions() {
+        const list = metricsFor(currentLang())[typeSelect.value];
+        const system = currentUnitSystem();
+        const prevKey = metricSelect.value;
+        metricSelect.innerHTML = '';
+        for (const m of list) {
+          const opt = document.createElement('option');
+          opt.value = m.key;
+          opt.textContent = typeof m.label === 'function' ? m.label(system) : m.label;
+          metricSelect.appendChild(opt);
+        }
+        metricSelect.value = list.some((m) => m.key === prevKey) ? prevKey : 'avgHeartRate';
+      }
+
+      // Appends one option per Vietnam-local calendar year present in the selected type's data
+      // (newest first) after the fixed rolling-window options, so picking a year zooms the
+      // scatter to exactly that year instead of lumping every year together.
+      function populateRangeOptions() {
+        const prevValue = rangeSelect.value;
+        [...rangeSelect.querySelectorAll('option[data-year]')].forEach((opt) => opt.remove());
+        const years = [...new Set(pointsByType[typeSelect.value].map((p) => toVnDate(p.date).getUTCFullYear()))].sort((a, b) => b - a);
+        for (const y of years) {
+          const opt = document.createElement('option');
+          opt.value = String(y);
+          opt.textContent = String(y);
+          opt.dataset.year = 'true';
+          rangeSelect.appendChild(opt);
+        }
+        rangeSelect.value = [...rangeSelect.options].some((o) => o.value === prevValue) ? prevValue : '5y';
+      }
+
+      let chart;
+      function render(c) {
+        const lang = currentLang();
+        const system = currentUnitSystem();
+        const metricList = metricsFor(lang)[typeSelect.value];
+        const metric = metricList.find((m) => m.key === metricSelect.value) || metricList[0];
+        const metricLabel = typeof metric.label === 'function' ? metric.label(system) : metric.label;
+        const all = pointsByType[typeSelect.value];
+
+        const rangeValue = rangeSelect.value;
+        const rangeCfg = RANGE_CONFIG[rangeValue]; // undefined for 'all' or a specific year
+        const isSpecificYear = /^\d+$/.test(rangeValue);
+        const period = PERIODS[rangeCfg ? rangeCfg.period : isSpecificYear ? 'month' : 'year'];
+        let windowed = all;
+        if (rangeCfg) {
+          const latestIso = all.reduce((m, p) => (!m || p.date > m ? p.date : m), null);
+          const cutoff = latestIso ? new Date(new Date(latestIso).getTime() - rangeCfg.days * 86400000) : null;
+          windowed = cutoff ? all.filter((p) => new Date(p.date) >= cutoff) : [];
+        } else if (isSpecificYear) {
+          const year = Number(rangeValue);
+          windowed = all.filter((p) => toVnDate(p.date).getUTCFullYear() === year);
+        }
+
+        const points = windowed.filter((p) => p[metric.key] != null);
+        chart?.destroy();
+        if (emptyNote) emptyNote.hidden = points.length > 0;
+        if (!points.length) return;
+
+        // Calendar-aligned X ticks spanning the visible points, at the granularity picked above -
+        // same afterBuildTicks + explicit {value} array technique as the habit-scatter chart's
+        // intTicks() helper, just built from real dates instead of a fixed 0-23/0-6 integer range.
+        const keys = points.map((p) => period.keyOf(p.date));
+        const fromKey = keys.reduce((a, b) => (a < b ? a : b));
+        const toKey = keys.reduce((a, b) => (a > b ? a : b));
+        const tickSeq = periodSeq(period, fromKey, toKey);
+        const tickValues = tickSeq.map((k) => period.startMs(k));
+        const tickLabelOf = new Map(tickSeq.map((k) => [period.startMs(k), period.label(k)]));
+
+        // One dataset per calendar year with a bold, mutually-distinct color (not a single-hue
+        // shading ramp) - same seriesVisual() categorical palette as the habit-scatter chart
+        // above, indexed via the shared yearIndex so a given year reads as the same color there
+        // too, rather than each chart independently shading its own subset of years.
+        const mode = currentTheme();
+        const yearsPresent = [...new Set(points.map((p) => toVnDate(p.date).getUTCFullYear()))].sort((a, b) => a - b);
+
+        chart = new Chart(canvas, {
+          type: 'scatter',
+          data: {
+            datasets: yearsPresent.map((year) => {
+              const { color, pointStyle } = seriesVisual(yearIndex.get(year), mode);
+              return {
+                label: String(year),
+                data: points
+                  .filter((p) => toVnDate(p.date).getUTCFullYear() === year)
+                  .map((p) => ({ x: new Date(p.date).getTime(), y: metric.convert(p[metric.key], system), date: p.date })),
+                backgroundColor: color,
+                pointStyle,
+                borderWidth: 0,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+              };
+            }),
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            // 'nearest'+intersect:false so the cursor only needs to be CLOSEST to a dot, not
+            // exactly over its small (r=4) painted area - the point radius is a visual size, not
+            // a hit-target size (see the dataviz skill's interaction notes on scatter hit areas).
+            interaction: { mode: 'nearest', intersect: false },
+            plugins: {
+              legend: { position: 'right', labels: { color: c.onSurface, boxWidth: 12, usePointStyle: true } },
+              tooltip: {
+                callbacks: {
+                  title: (items) => (items[0] ? formatDate(items[0].raw.date) : ''),
+                  label: (ctx) => `${metricLabel}: ${metric.fmt(ctx.raw.y)}`,
+                },
+              },
+            },
+            scales: {
+              x: {
+                type: 'linear',
+                afterBuildTicks: (axis) => { axis.ticks = tickValues.map((value) => ({ value })); },
+                ticks: { color: c.onSurfaceVariant, callback: (v) => tickLabelOf.get(v) ?? '' },
+                title: { display: true, text: t(lang, 'common.time'), color: c.onSurfaceVariant },
+                grid: { color: c.outlineVariant },
+              },
+              y: {
+                ticks: { color: c.onSurfaceVariant, callback: (v) => metric.fmt(v) },
+                title: { display: true, text: metricLabel, color: c.onSurfaceVariant },
+                grid: { color: c.outlineVariant },
+              },
+            },
+          },
+        });
+      }
+
+      populateMetricOptions();
+      populateRangeOptions();
+      onThemeChange(render);
+      typeSelect.addEventListener('change', () => { populateMetricOptions(); populateRangeOptions(); render(themeColors()); });
+      metricSelect.addEventListener('change', () => render(themeColors()));
+      rangeSelect.addEventListener('change', () => render(themeColors()));
+      document.addEventListener('unitschange', () => { populateMetricOptions(); render(themeColors()); });
+      document.addEventListener('langchange', () => { populateMetricOptions(); render(themeColors()); });
+    }
+  }
+
+  // Volume-over-time combo chart: ONE mixed chart spanning the entire continuous history as a
+  // single timeline, with a day/month/year granularity toggle on top of the existing year-range
+  // filter (which still only zooms which slice of the timeline is shown, not a year-vs-year
+  // comparison). Stacked bars = km by activity type (categorical color via activityColor(), same
+  // palette as the rest of the app); 2 line series = total time (giờ) and calories, each on its
+  // own right-side axis.
+  {
+    const select = document.getElementById('year-range-select');
+    const granularityGroup = document.querySelector('[data-toggle="volume-granularity"]');
+    if (select && granularityGroup) {
+      // Normalize the 3 granularities' bucket shapes (dailyTypeBuckets/monthlyTypeBuckets use
+      // `date`/`month`, yearlyTypeBreakdown only has `year`) into one common {key, year, types}
+      // shape so seriesForMode/render below don't need to branch on granularity.
+      const seriesByGranularity = {
+        day: dataOf(select, 'daily').map((b) => ({ key: b.date, year: b.year, types: b.types })),
+        month: dataOf(select, 'monthly').map((b) => ({ key: b.month, year: b.year, types: b.types })),
+        year: dataOf(select, 'yearly').map((b) => ({ key: String(b.year), year: b.year, types: b.types })),
+      };
+      const labelFormatters = {
+        day: (key) => { const [y, m, d] = key.split('-'); return `${d}/${m}/${y.slice(2)}`; },
+        month: (key) => key,
+        year: (key) => key,
+      };
+      let granularity = 'month';
+
+      // Picking a single specific year makes no sense once the bars are already one-per-year
+      // (that would just show 1 bar) - so the year granularity restricts "Khoảng thời gian" down
+      // to the 3 span-based options, same idea as heatmap-range-select's dynamic year options but
+      // in reverse (hiding rather than adding). Falls back to "all" if the option it was on gets
+      // hidden out from under it.
+      function updateYearRangeOptions() {
+        const restrict = granularity === 'year';
+        select.querySelectorAll('option[data-year]').forEach((opt) => { opt.hidden = restrict; });
+        if (restrict && select.selectedOptions[0]?.dataset.year) select.value = 'all';
+      }
+
+      const seriesForMode = (mode) => {
+        const allSeries = seriesByGranularity[granularity];
+        if (mode === 'all') return allSeries;
+        if (mode === 'last3' || mode === 'last5') {
+          const n = mode === 'last3' ? 3 : 5;
+          const years = [...new Set(allSeries.map((m) => m.year))].sort((a, b) => a - b);
+          const keep = new Set(years.slice(-n));
+          return allSeries.filter((m) => keep.has(m.year));
+        }
+        return allSeries.filter((m) => String(m.year) === mode);
+      };
+
+      let chart;
+      import('../lib/format.js').then(({ activityColor }) => {
+        function render(c) {
+          const lang = currentLang();
+          const system = currentUnitSystem();
+          const distFactor = system === 'imperial' ? 1 / KM_PER_MILE : 1;
+          const distUnit = system === 'imperial' ? 'mi' : 'km';
+          const series = seriesForMode(select.value);
+          const labelOf = labelFormatters[granularity];
+          const types = [...new Set(series.flatMap((m) => m.types.map((mt) => mt.type)))];
+          chart?.destroy();
+          const canvas = readCanvas('monthly-combo-chart');
+          if (!canvas) return;
+
+          // Sums only the currently-visible types (per the bar legend toggles) - recomputed
+          // whenever a type is hidden/shown, so "total" time/calories always matches what's
+          // actually shown in the stacked bars rather than always being the grand total.
+          const timeData = (visibleTypes) => series.map((m) => Math.round(
+            (m.types.filter((t) => visibleTypes.has(t.type)).reduce((sum, t) => sum + (t.movingTimeSec || 0), 0) / 3600) * 10,
+          ) / 10);
+          const caloriesData = (visibleTypes) => series.map((m) =>
+            Math.round(m.types.filter((t) => visibleTypes.has(t.type)).reduce((sum, t) => sum + (t.calories || 0), 0)),
+          );
+          const allVisible = new Set(types);
+
+          chart = new Chart(canvas, {
+            data: {
+              labels: series.map((m) => labelOf(m.key)),
+              datasets: [
+                ...types.map((type) => ({
+                  type: 'bar',
+                  label: activityTypeLabel(lang, type),
+                  data: series.map((m) => Math.round((m.types.find((mt) => mt.type === type)?.km || 0) * distFactor * 10) / 10),
+                  backgroundColor: activityColor(type),
+                  stack: 'distance',
+                  maxBarThickness: 18,
+                  borderRadius: 3,
+                  yAxisID: 'y',
+                  // Chart.js draws lower-`order` datasets last (on top) - without this, the bars
+                  // (added first but tied at the default order 0) paint over the 2 line series
+                  // below, hiding them behind the stacked columns.
+                  order: 2,
+                })),
+                {
+                  type: 'line',
+                  label: t(lang, 'stats.totalTimeHoursLabel'),
+                  data: timeData(allVisible),
+                  borderColor: c.onSurface,
+                  backgroundColor: c.onSurface,
+                  yAxisID: 'y1',
+                  pointRadius: 0,
+                  borderWidth: 2,
+                  order: 1,
+                },
+                {
+                  type: 'line',
+                  label: t(lang, 'common.calories'),
+                  data: caloriesData(allVisible),
+                  borderColor: c.tertiary,
+                  backgroundColor: c.tertiary,
+                  yAxisID: 'y2',
+                  pointRadius: 0,
+                  borderWidth: 2,
+                  order: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: 'index', intersect: false },
+              plugins: {
+                legend: {
+                  position: 'bottom',
+                  labels: { color: c.onSurface, boxWidth: 12 },
+                  // Toggling a type's bar via the legend also recomputes the time/calories
+                  // lines to sum only the types still visible; the 2 lines' own legend entries
+                  // just hide/show themselves as normal (they aren't a "type" to sum over).
+                  onClick(e, legendItem, legend) {
+                    const ci = legend.chart;
+                    const index = legendItem.datasetIndex;
+                    if (ci.isDatasetVisible(index)) {
+                      ci.hide(index);
+                      legendItem.hidden = true;
+                    } else {
+                      ci.show(index);
+                      legendItem.hidden = false;
+                    }
+                    if (index >= types.length) return;
+                    const visibleTypes = new Set(types.filter((_, i) => ci.isDatasetVisible(i)));
+                    ci.data.datasets[types.length].data = timeData(visibleTypes);
+                    ci.data.datasets[types.length + 1].data = caloriesData(visibleTypes);
+                    ci.update();
+                  },
+                },
+              },
+              scales: {
+                x: { stacked: true, ticks: { color: c.onSurfaceVariant, maxRotation: 0, autoSkip: true, maxTicksLimit: 24 }, grid: { display: false } },
+                y: { stacked: true, position: 'left', title: { display: true, text: distUnit, color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { color: c.outlineVariant } },
+                y1: { position: 'right', title: { display: true, text: t(lang, 'unit.hour'), color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { display: false } },
+                y2: { position: 'right', title: { display: true, text: t(lang, 'common.calories'), color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { display: false } },
+              },
+            },
+          });
+        }
+        onThemeChange(render);
+        select.addEventListener('change', () => render(themeColors()));
+        document.addEventListener('unitschange', () => render(themeColors()));
+        document.addEventListener('langchange', () => render(themeColors()));
+        granularityGroup.querySelectorAll('button').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            if (btn.classList.contains('active')) return;
+            granularityGroup.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            granularity = btn.dataset.value;
+            updateYearRangeOptions();
+            render(themeColors());
+          });
+        });
+      });
+    }
+  }
+
+  // Habit scatter: hour-of-day (x, real minute-precision start time) vs day-of-week (y), one
+  // point per activity - same per-point-per-year-dataset technique as the metric-vs-time heatmap
+  // and metric correlation charts elsewhere on this page, all colored via seriesVisual()/
+  // EXTRA_SERIES_COLORS (bold, mutually distinct hues kept clear of ACTIVITY_COLORS) rather than
+  // a single-hue light->dark ramp - with 9 calendar years, adjacent ramp steps would read as
+  // near-identical on a small mobile screen. Points are solid (no alpha) for the same
+  // mobile-clarity reason. Unlike those charts, day-of-week only has 7 distinct values, so
+  // same-weekday activities would otherwise stack into one flat row regardless of how precise the
+  // hour is - a small fixed jitter on y (computed once, reused across theme re-renders so it
+  // doesn't reshuffle on toggle) spreads them into a readable band instead.
+  {
+    const canvas = readCanvas('habit-scatter');
+    if (canvas) {
+      const points = dataOf(canvas, 'points');
+      const dowLabelsBoth = dataOf(canvas, 'dowLabels');
+      const yearIndex = yearIndexOf(canvas);
+      const years = [...new Set(points.map((p) => p.year))].sort((a, b) => a - b);
+      const jittered = points.map((p) => ({ ...p, jitterDow: p.dow + (Math.random() - 0.5) * 0.7 }));
+      const formatClock = (hourFloat) => {
+        let h = Math.floor(hourFloat);
+        let m = Math.round((hourFloat - h) * 60);
+        if (m === 60) { m = 0; h = (h + 1) % 24; } // rounding e.g. 17.999 up to the next hour
+        return `${h}:${String(m).padStart(2, '0')}`;
+      };
+      const intTicks = (min, max) => (axis) => {
+        axis.ticks = Array.from({ length: max - min + 1 }, (_, i) => ({ value: min + i }));
+      };
+      let chart;
+      function render(c) {
+        const lang = currentLang();
+        const dowLabels = dowLabelsBoth[lang];
+        chart?.destroy();
+        const mode = currentTheme();
+        chart = new Chart(canvas, {
+          type: 'scatter',
+          data: {
+            datasets: years.map((year) => {
+              const { color, pointStyle } = seriesVisual(yearIndex.get(year), mode);
+              return {
+                label: String(year),
+                data: jittered.filter((p) => p.year === year).map((p) => ({ x: p.hour, y: p.jitterDow, hour: p.hour, dow: p.dow })),
+                backgroundColor: color,
+                pointStyle,
+                borderWidth: 0,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+              };
+            }),
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              // usePointStyle so a reused-hue year's legend swatch shows its distinguishing
+              // triangle/rect shape instead of Chart.js's default plain color box (which would
+              // otherwise look identical to the year whose hue it reused).
+              legend: { position: 'right', labels: { color: c.onSurface, boxWidth: 12, usePointStyle: true } },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => `${ctx.dataset.label} · ${formatClock(ctx.raw.hour)} · ${dowLabels[ctx.raw.dow]}`,
+                },
+              },
+            },
+            scales: {
+              x: {
+                min: -0.5, max: 23.5,
+                afterBuildTicks: intTicks(0, 23),
+                ticks: { color: c.onSurfaceVariant, callback: (v) => `${v}h` },
+                grid: { color: c.outlineVariant },
+                title: { display: true, text: t(lang, 'stats.hourOfDayAxis'), color: c.onSurfaceVariant },
+              },
+              y: {
+                min: -0.5, max: 6.5,
+                reverse: true,
+                afterBuildTicks: intTicks(0, 6),
+                ticks: { color: c.onSurfaceVariant, callback: (v) => dowLabels[v] ?? '' },
+                grid: { color: c.outlineVariant },
+                title: { display: true, text: t(lang, 'stats.dayOfWeekAxis'), color: c.onSurfaceVariant },
+              },
+            },
+          },
+        });
+      }
+      onThemeChange(render);
+      document.addEventListener('langchange', () => render(themeColors()));
+    }
+  }
+
+  // Activity-type breakdown: 3 horizontal "leaderboard" bar charts (count / time / calories),
+  // all three re-drawn together from one <select> (all-time or a single year). Rows are sorted
+  // once by count (desc) and that SAME order is reused for all 3 charts, so a type stays in the
+  // same row position across the row for easy left-to-right scanning. Colors fixed per type
+  // (categorical identity), reusing the same activity-color palette as the rest of the app. Each
+  // bar also gets its value drawn past its end (barValueLabelsPlugin) so the number is readable
+  // without hovering; `format` runs on the RAW (untransformed) value so the time chart's label can
+  // round to hour:minute even though the bar itself plots decimal hours for its axis scale.
+  {
+    const select = document.getElementById('type-year-select');
+    if (select) {
+      const allRows = dataOf(select, 'all');
+      const byYear = dataOf(select, 'byYear');
+
+      function formatHM(totalSec) {
+        const totalMin = Math.round((totalSec || 0) / 60);
+        return `${Math.floor(totalMin / 60)}:${String(totalMin % 60).padStart(2, '0')}`;
+      }
+
+      const specsFor = (lang) => [
+        { id: 'type-count-chart', key: 'count', label: t(lang, 'dashboard.sessionCountBtn'), format: formatNumber },
+        { id: 'type-time-chart', key: 'movingTimeSec', label: t(lang, 'stats.timeHoursLabel'), transform: (v) => Math.round((v / 3600) * 10) / 10, format: formatHM },
+        { id: 'type-calories-chart', key: 'calories', label: t(lang, 'common.calories'), format: formatNumber },
+      ];
+
+      const rowsForMode = (mode) => {
+        if (mode === 'all') return allRows;
+        return byYear.find((y) => String(y.year) === mode)?.types || [];
+      };
+
+      import('../lib/format.js').then(({ activityColor }) => {
+        const charts = new Map();
+        function renderAll(c) {
+          const lang = currentLang();
+          const specs = specsFor(lang);
+          const sorted = [...rowsForMode(select.value)].sort((a, b) => b.count - a.count);
+          for (const spec of specs) {
+            const canvas = readCanvas(spec.id);
+            if (!canvas) continue;
+            charts.get(spec.id)?.destroy();
+            charts.set(spec.id, new Chart(canvas, {
+              type: 'bar',
+              plugins: [barValueLabelsPlugin({ color: c.onSurface, formatter: (i) => spec.format(sorted[i][spec.key]) })],
+              data: {
+                labels: sorted.map((r) => activityTypeLabel(lang, r.type)),
+                datasets: [{
+                  label: spec.label,
+                  data: sorted.map((r) => (spec.transform ? spec.transform(r[spec.key]) : r[spec.key])),
+                  backgroundColor: sorted.map((r) => activityColor(r.type)),
+                  borderRadius: 4,
+                  maxBarThickness: 28,
+                }],
+              },
+              options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { right: 44 } },
+                plugins: { legend: { display: false } },
+                scales: hBarScales(c),
+              },
+            }));
+          }
+        }
+        onThemeChange(renderAll);
+        select.addEventListener('change', () => renderAll(themeColors()));
+        document.addEventListener('langchange', () => renderAll(themeColors()));
+      });
+    }
+  }
+</script>

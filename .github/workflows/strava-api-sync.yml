@@ -1,0 +1,152 @@
+name: Strava API sync
+
+# Backup path for the nightly Claude Code / Strava MCP routine: calls the Strava REST API
+# directly (OAuth refresh token, no Claude/MCP involved) and merges through the same
+# scripts/etl/sync-strava.mjs the MCP routine uses. See CLAUDE.md "Đồng bộ dự phòng qua Strava
+# API (GitHub Actions)" for the full design.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Sync mode"
+        type: choice
+        options:
+          - auto
+          - forward-only
+          - backfill
+        default: auto
+  schedule:
+    # Twice-daily incremental sync (forward pass + continue any backfill already in progress):
+    # 22:00 UTC = 05:00 GMT+7, and 10:00 UTC = 17:00 GMT+7.
+    - cron: '0 22 * * *'
+    - cron: '0 10 * * *'
+    # 02:00 UTC every Sunday = 09:00 GMT+7 - weekly full-history re-verification ("audit" mode,
+    # see CLAUDE.md gotcha #33). Forces backfillState to restart a fresh backward walk from "now"
+    # even when done:true, so any activity a bug silently dropped gets picked back up
+    # automatically instead of requiring someone to notice and diff against a backup branch by
+    # hand. Cheap in the steady state: existingIds dedup skips everything already synced, so a
+    # clean week costs ~18 list calls (one per 100-activity page) and finishes in well under a
+    # minute - only genuine gaps spend real fetch budget.
+    - cron: '0 2 * * 0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: strava-api-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # Steady-state runs (no backfill in progress) finish in ~1-2 minutes, same as before. This
+    # ceiling only matters while a backfill is actively paced every 15 minutes below (up to 20
+    # iterations ~= 5h), and stays comfortably under GitHub Actions' 360-minute job cap.
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Sync from Strava (paced every 15 min while backfilling)
+        env:
+          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+          STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
+          # workflow_dispatch always honors the chosen input. Scheduled runs pick a mode by which
+          # cron fired: the weekly Sunday slot forces a full-history audit pass, either daily slot
+          # (or any other future schedule entry) falls back to normal incremental 'auto'.
+          SYNC_MODE: ${{ github.event.inputs.mode || (github.event.schedule == '0 2 * * 0' && 'backfill') || 'auto' }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Commits + pushes whatever the most recent sync step produced, if anything. Retries with
+          # a rebase in case the nightly MCP routine (or another manual dispatch of this same
+          # workflow) pushed to main in the meantime.
+          commit_and_push() {
+            git add -A
+            if git diff --cached --quiet; then
+              return 0
+            fi
+            git commit -m "chore: strava api sync ($1)"
+            for attempt in 1 2 3 4; do
+              if git push origin HEAD:main; then
+                return 0
+              fi
+              echo "Push failed (attempt $attempt), rebasing onto latest main and retrying..."
+              git fetch origin main
+              git rebase origin/main
+              sleep $((attempt * 5))
+            done
+            echo "Push failed after retries" >&2
+            return 1
+          }
+
+          # Each iteration fetches one rate-limit-budgeted batch (see MAX_READ_CALLS_PER_RUN in
+          # strava-client.mjs), builds, and pushes immediately so progress survives even if a
+          # later iteration fails. Ordinary days (no backfill in progress) exit after iteration 1
+          # via the `done` check below, identical in cost to the previous single-pass workflow.
+          MAX_ITERATIONS=20
+          PREV_CURSOR=""
+          for i in $(seq 1 $MAX_ITERATIONS); do
+            echo "::group::Sync iteration $i/$MAX_ITERATIONS"
+            node scripts/etl/api/run-api-sync.mjs
+            npm run build
+            commit_and_push "iteration $i"
+            echo "::endgroup::"
+
+            DONE=$(jq -r '.done' scripts/etl/api/backfill-state.json)
+            STOP_REASON=$(jq -r '.lastRunStopReason // "null"' scripts/etl/api/backfill-state.json)
+            CURSOR=$(jq -r '.cursorBeforeEpoch // "null"' scripts/etl/api/backfill-state.json)
+
+            if [ "$DONE" = "true" ]; then
+              echo "Backfill complete (or not active) - done for this run."
+              break
+            fi
+            # 'per-run-budget' just means this batch spent its MAX_READ_CALLS_PER_RUN allowance -
+            # that's the expected, routine outcome of every backfill iteration (an internal pacing
+            # knob, not a real Strava limit), so keep looping through it below. Only a genuine
+            # Strava-enforced stop ('daily-quota' or 'short-term-429') should end the whole job.
+            if [ "$STOP_REASON" = "daily-quota" ] || [ "$STOP_REASON" = "short-term-429" ]; then
+              echo "Hit a real Strava rate limit ($STOP_REASON) - resuming from the next scheduled run."
+              break
+            fi
+            # Defends against a stuck cursor (e.g. a pagination bug) looping for the full 20
+            # iterations every day forever and quietly burning the monthly Actions-minutes quota.
+            if [ -n "$PREV_CURSOR" ] && [ "$CURSOR" = "$PREV_CURSOR" ]; then
+              echo "::error::Backfill cursor did not advance between iterations - stopping to avoid burning Actions minutes on a stuck loop." >&2
+              exit 1
+            fi
+            PREV_CURSOR="$CURSOR"
+
+            if [ "$i" -lt "$MAX_ITERATIONS" ]; then
+              echo "Backfill still in progress, sleeping 15 min before next batch..."
+              sleep 900
+            fi
+          done
+
+          # Rebuilds gear.json's catalog straight from Strava's own gear list every run (~14 calls
+          # total for this athlete, independent of activity count) and recomputes totals from
+          # activities.json. Separate from the loop above on purpose: activity syncing above can
+          # only ever update a gear.json entry that already exists (sync-strava.mjs's
+          # applyGearDelta), so once gear.json was wiped empty (2026-07-12) nothing about syncing
+          # more activities could ever repopulate it, pick up brand-new gear, or notice a
+          # retirement-status change on Strava - see CLAUDE.md gotcha #31/#34. This step is what
+          # actually (re)creates/refreshes the catalog; it's cheap and idempotent so it just runs
+          # unconditionally after every sync, not only when new activities showed up. The nightly
+          # Claude Code / Strava MCP routine does the same thing through the same merge script
+          # (scripts/etl/sync-gear.mjs) with gear fetched via the MCP `get_gear` tool instead of
+          # this REST call - see CLAUDE.md "Đồng bộ tự động từ Strava".
+          echo "::group::Sync gear catalog"
+          node scripts/etl/api/fetch-gear.mjs
+          npm run build
+          commit_and_push "gear catalog"
+          echo "::endgroup::"

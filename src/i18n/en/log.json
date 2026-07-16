@@ -1,0 +1,8 @@
+{
+  "title": "Weekly Log",
+  "subtitle": "A weekly training timeline. Each circle is one activity, sized in proportion to its duration.",
+  "allHistoryShown": "— Full history shown —",
+  "viewingLabel": "Viewing: {month} {year}",
+  "monthLabel": "{month}",
+  "monthNames": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+}

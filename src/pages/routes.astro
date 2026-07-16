@@ -1,0 +1,201 @@
+---
+import Layout from '../layouts/Layout.astro';
+import T from '../components/T.astro';
+import 'maplibre-gl/dist/maplibre-gl.css';
+
+const TYPES = ['Run', 'Ride', 'Walk', 'Workout'];
+---
+<Layout titleKey="nav.routes">
+  <h1><T key="routes.title" /></h1>
+  <p class="subtitle"><T key="routes.subtitle" /></p>
+
+  <div class="card" id="routes-card">
+    <div class="routes-toolbar" id="routes-filter">
+      {TYPES.map((type) => (
+        <label class="routes-filter-item">
+          <input type="checkbox" checked data-type={type} />
+          <span class="routes-filter-swatch" data-swatch={type}></span>
+          <T key={`activityType.${type}`} />
+        </label>
+      ))}
+    </div>
+    <div id="routes-map" style="height:70vh;border-radius:12px;overflow:hidden"></div>
+  </div>
+</Layout>
+
+<style>
+  .routes-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+  .routes-filter-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--md-on-surface-variant);
+    cursor: pointer;
+  }
+  .routes-filter-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .map-fallback {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--md-surface-container-high);
+    color: var(--md-on-surface-variant);
+    font-size: 14px;
+    text-align: center;
+    padding: 16px;
+  }
+</style>
+
+<script>
+  import { activityColor } from '../lib/format.js';
+  import { currentTheme, onThemeChange } from '../lib/theme.js';
+  import { fetchJsonWithRetry } from '../lib/fetchJson.js';
+  import { t } from '../lib/i18n.js';
+  import { currentLang } from '../lib/lang.js';
+
+  const MAP_STYLES = {
+    light: 'https://tiles.openfreemap.org/styles/liberty',
+    dark: 'https://tiles.openfreemap.org/styles/dark',
+  };
+
+  for (const el of document.querySelectorAll('.routes-filter-swatch')) {
+    el.style.background = activityColor(el.dataset.swatch);
+  }
+
+  const mapDiv = document.getElementById('routes-map');
+  if (mapDiv) {
+    Promise.all([fetchJsonWithRetry('/data/routes.json'), fetchJsonWithRetry('/data/heatgrid.json')])
+      .then(async ([routes, heatgrid]) => {
+        if (!routes.length) return;
+        const maplibregl = (await import('maplibre-gl')).default;
+
+        const features = routes.map((r) => ({
+          type: 'Feature',
+          properties: { id: r.id, type: r.type },
+          geometry: { type: 'LineString', coordinates: r.coords.map(([lat, lng]) => [lng, lat]) },
+        }));
+        // Precomputed at ETL time (scripts/etl/lib/heatgrid.mjs): one point per ~30m grid cell,
+        // with a per-type overlap count instead of one raw point per GPS sample - so a commute
+        // ridden 200 times contributes weight to a handful of cells instead of 200 x 40 points,
+        // and "how many activities passed here" doesn't get confused with "how many GPS samples
+        // landed here" (e.g. idling at a red light).
+        const pointFeatures = heatgrid.map(({ lat, lng, ...w }) => ({
+          type: 'Feature',
+          properties: w,
+          geometry: { type: 'Point', coordinates: [lng, lat] },
+        }));
+
+        const first = features[0].geometry.coordinates[0];
+        const bounds = features.reduce(
+          (b, f) => f.geometry.coordinates.reduce((bb, ll) => bb.extend(ll), b),
+          new maplibregl.LngLatBounds(first, first)
+        );
+
+        let styleKey = currentTheme() === 'dark' ? 'dark' : 'light';
+        const map = new maplibregl.Map({
+          container: mapDiv,
+          style: MAP_STYLES[styleKey],
+          bounds,
+          fitBoundsOptions: { padding: 20 },
+        });
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+        let loaded = false;
+        map.on('error', () => {
+          if (loaded) return;
+          mapDiv.innerHTML = `<div class="map-fallback">${t(currentLang(), 'common.noMapTiles')}</div>`;
+        });
+
+        map.on('click', 'routes-line', (e) => {
+          const id = e.features?.[0]?.properties?.id;
+          if (id) window.location.href = `/activities/${id}`;
+        });
+        map.on('mouseenter', 'routes-line', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'routes-line', () => { map.getCanvas().style.cursor = ''; });
+
+        const checkboxes = document.querySelectorAll('#routes-filter input[type=checkbox]');
+        const applyFilter = () => {
+          const active = [...checkboxes].filter((c) => c.checked).map((c) => c.dataset.type);
+          map.setFilter('routes-line', ['in', ['get', 'type'], ['literal', active]]);
+          // heatgrid points carry one weight per activity type instead of a `type` property, so
+          // filtering means summing only the checked types' weight rather than setFilter().
+          // sqrt compresses the range (busiest cells run 2-3 orders of magnitude above a
+          // once-off route) so the heatmap still shows gradient instead of a saturated blob.
+          const sum = ['+', 0, ...active.map((t) => ['coalesce', ['get', t], 0])];
+          map.setPaintProperty('routes-heat', 'heatmap-weight', ['sqrt', sum]);
+        };
+        for (const cb of checkboxes) cb.addEventListener('change', applyFilter);
+
+        // Re-added on every 'style.load' - fires once for the initial style and again after
+        // each setStyle() below, since setStyle wipes all sources/layers from the old style.
+        map.on('style.load', () => {
+          loaded = true;
+          map.addSource('routes-points', { type: 'geojson', data: { type: 'FeatureCollection', features: pointFeatures } });
+          map.addLayer({
+            id: 'routes-heat',
+            type: 'heatmap',
+            source: 'routes-points',
+            paint: {
+              'heatmap-weight': 1,
+              'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 15, 3],
+              'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 15, 20],
+              'heatmap-color': [
+                'interpolate', ['linear'], ['heatmap-density'],
+                0, 'rgba(0,0,0,0)',
+                0.2, '#3b82f6',
+                0.4, '#22d3ee',
+                0.6, '#facc15',
+                0.8, '#fb923c',
+                1, '#ef4444',
+              ],
+              'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 12, 1, 16, 0.35],
+            },
+          });
+
+          map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features } });
+          map.addLayer({
+            id: 'routes-line',
+            type: 'line',
+            source: 'routes',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-width': 1.5,
+              'line-opacity': 0.55,
+              'line-color': ['match', ['get', 'type'], ...Object.entries({
+                Run: activityColor('Run'),
+                Ride: activityColor('Ride'),
+                Walk: activityColor('Walk'),
+                Workout: activityColor('Workout'),
+              }).flat(), activityColor('')],
+            },
+          });
+
+          applyFilter();
+        });
+
+        onThemeChange(() => {
+          const next = currentTheme() === 'dark' ? 'dark' : 'light';
+          if (next === styleKey) return;
+          styleKey = next;
+          map.setStyle(MAP_STYLES[next]);
+        });
+      })
+      .catch((err) => {
+        console.error('Failed to load routes.json', err);
+        const lang = currentLang();
+        mapDiv.innerHTML = `<div class="map-fallback">${t(lang, 'routes.loadError')}<button type="button" id="routes-retry">${t(lang, 'common.retry')}</button></div>`;
+        document.getElementById('routes-retry')?.addEventListener('click', () => location.reload());
+      });
+  }
+</script>

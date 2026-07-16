@@ -1,0 +1,8 @@
+{
+  "title": "Lịch tập luyện",
+  "subtitle": "Tổng hợp hoạt động theo năm, tháng và ngày. Mỗi chấm màu đánh dấu một loại hoạt động có trong giai đoạn; số liệu bên cạnh là tổng quãng đường, thời gian và calories của giai đoạn đó.",
+  "allYears": "Tất cả các năm",
+  "monthNames": ["Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", "Tháng 5", "Tháng 6", "Tháng 7", "Tháng 8", "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"],
+  "dayActivitiesHeading": "Hoạt động ngày {day}/{month}/{year}",
+  "restDay": "Nghỉ"
+}

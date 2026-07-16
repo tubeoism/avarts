@@ -1,0 +1,22 @@
+{
+  "title": "Gear",
+  "subtitle": "Accumulated distance per shoe / bike, computed from the gear tagged on each activity.",
+  "shoesHeading": "Shoes",
+  "bikesHeading": "Bikes",
+  "shoeCol": "Shoe",
+  "bikeCol": "Bike",
+  "sessionsCol": "Sessions",
+  "totalDistanceCol": "Total Distance",
+  "totalTimeCol": "Total Time",
+  "statusCol": "Status",
+  "componentsCol": "Components",
+  "retired": "Retired",
+  "noLimit": "No limit",
+  "replaceAtPrefix": "Replace at (",
+  "replaceAtSuffix": "+)",
+  "kind": {
+    "shoe": "Shoes",
+    "sandal": "Sandals",
+    "barefoot": "Barefoot"
+  }
+}

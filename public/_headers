@@ -1,0 +1,14 @@
+/*
+  # Static site with two data sources: same-origin JSON (fetch) and OpenFreeMap tiles/styles/
+  # glyphs/sprites (MapLibre). 'unsafe-inline' is required by Astro's is:inline bootstrap scripts
+  # (theme/lang, they must run pre-paint so they can't be external files) and inline style
+  # attributes; MapLibre needs blob: workers and data:/blob: images.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; connect-src 'self' https://tiles.openfreemap.org; worker-src blob:; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=()
+  Strict-Transport-Security: max-age=63072000; includeSubDomains
+
+/data/*.json
+  Cache-Control: public, max-age=300, must-revalidate

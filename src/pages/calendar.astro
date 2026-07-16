@@ -1,0 +1,483 @@
+---
+import Layout from '../layouts/Layout.astro';
+import T from '../components/T.astro';
+---
+<Layout titleKey="nav.calendar">
+  <h1><T key="calendar.title" /></h1>
+  <p class="subtitle"><T key="calendar.subtitle" /></p>
+
+  <div class="card">
+    <div class="cal-breadcrumb" id="cal-breadcrumb"></div>
+    <div id="cal-loading" class="empty-state"><T key="common.loading" /></div>
+    <div class="cal-grid" id="cal-grid" hidden></div>
+    <div class="cal-day-detail" id="cal-day-detail" hidden></div>
+  </div>
+</Layout>
+
+<style is:global>
+  /* Almost all of this page's markup (.cal-cell/.cal-cell-stat/.cal-breadcrumb-link/...) is
+     created by client-side JS rather than the Astro template, so it never gets Astro's
+     scoped-style data-astro-cid attribute - this whole block must stay unscoped (is:global) or
+     none of it would match (same gotcha as /log, see log.astro). */
+  .cal-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    min-height: 28px;
+  }
+  .cal-breadcrumb-link {
+    background: none;
+    border: none;
+    font: inherit;
+    font-weight: 600;
+    color: var(--md-primary);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: var(--md-shape-xs);
+  }
+  .cal-breadcrumb-link:hover { background: var(--md-surface-container-high); text-decoration: underline; }
+  .cal-breadcrumb-current {
+    font-weight: 700;
+    color: var(--md-on-surface);
+    padding: 4px 6px;
+  }
+  .cal-breadcrumb-sep { color: var(--md-outline); }
+
+  .cal-grid {
+    display: grid;
+    gap: 8px;
+  }
+  .cal-grid.level-year { grid-template-columns: repeat(5, 1fr); }
+  .cal-grid.level-month { grid-template-columns: repeat(6, 1fr); }
+  .cal-grid.level-day { grid-template-columns: repeat(7, 1fr); gap: 5px; }
+
+  .cal-dow-label {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--md-on-surface-variant);
+    padding-bottom: 2px;
+  }
+
+  /* Wall-calendar-style cell, kept square (aspect-ratio) regardless of column count: a bolded
+     label (year/month/day) in the top-left corner, then a row splitting the remaining space into
+     a vertical stack of colored dots (one per activity type present, via the app-wide
+     activityColor() palette - same colors as badges/log bubbles elsewhere) alongside the period's
+     combined totals, each figure on its own line. Hovering a dot shows that one type's own km
+     (skipped for Crossfit-style types)/time/calories via its native title tooltip, while the text
+     lines are always visible and cover every type combined. */
+  .cal-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    aspect-ratio: 1;
+    /* Grid/flex items default to min-width:auto (their max-content size), which stops a track
+       from ever shrinking to its 1fr share once text like "141,216 Calories" is wider than that
+       share - overflowing the whole grid sideways on narrow viewports. min-width: 0 here (and
+       on every nested flex child below) lets the browser actually shrink cells and wrap text
+       instead. */
+    min-width: 0;
+    gap: 6px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-shape-xs);
+    background: var(--md-surface-container-low);
+    font: inherit;
+    color: var(--md-on-surface);
+    cursor: pointer;
+    text-align: left;
+    padding: 8px 10px;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+  .cal-cell:hover { border-color: var(--md-primary); background: var(--md-surface-container-high); }
+  .cal-cell.empty { border: none; background: none; cursor: default; aspect-ratio: auto; }
+  .cal-cell.today { border-color: var(--md-primary); border-width: 2px; }
+  .cal-cell.no-data .cal-cell-label { color: var(--md-on-surface-variant); }
+
+  .cal-cell-label {
+    font-size: 14px;
+    font-weight: 700;
+    flex: none;
+  }
+  .cal-grid.level-year .cal-cell-label { font-size: 18px; }
+
+  .cal-cell-body {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .cal-cell-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .cal-cell-stat {
+    font-size: 12.5px;
+    color: var(--md-on-surface-variant);
+    line-height: 1.35;
+    overflow-wrap: break-word;
+  }
+  .cal-cell.no-data .cal-cell-stat { font-style: italic; }
+
+  .cal-type-dots {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .cal-type-dot {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .cal-grid.level-year .cal-type-dot { width: 15px; height: 15px; }
+
+  .cal-grid.level-day .cal-cell {
+    padding: 6px;
+    gap: 3px;
+  }
+  .cal-grid.level-day .cal-cell-label { font-size: 12px; }
+  .cal-grid.level-day .cal-cell-stat { font-size: 10px; }
+  .cal-grid.level-day .cal-type-dot { width: 9px; height: 9px; }
+
+  .cal-day-detail {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--md-outline-variant);
+  }
+  .cal-day-detail h3 { font-size: 14px; margin: 0 0 10px; color: var(--md-on-surface-variant); }
+  .cal-day-list { display: flex; flex-direction: column; gap: 6px; }
+  .cal-day-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--md-shape-sm);
+    background: var(--md-surface-container-low);
+    color: var(--md-on-surface);
+  }
+  .cal-day-item:hover { background: var(--md-surface-container-high); text-decoration: none; }
+  .cal-day-item-name { flex: 1; font-weight: 500; }
+  .cal-day-item-stats { color: var(--md-on-surface-variant); font-size: 13px; white-space: nowrap; }
+
+  @media (max-width: 600px) {
+    .cal-cell-label { font-size: 12px; }
+    .cal-grid.level-year { grid-template-columns: repeat(3, 1fr); }
+    .cal-grid.level-month { grid-template-columns: repeat(3, 1fr); }
+    .cal-grid.level-day .cal-cell { padding: 4px; gap: 2px; }
+    .cal-grid.level-day .cal-cell-stat { font-size: 8px; }
+    .cal-grid.level-day .cal-type-dot { width: 7px; height: 7px; }
+    .cal-cell-body { gap: 5px; }
+  }
+</style>
+
+<script>
+  import { calendarTotals, CALENDAR_DISTANCE_TYPES } from '../lib/stats.mjs';
+  import { formatDistance, formatDuration, formatNumber, activityColor, ACTIVITY_COLORS, toVnDate } from '../lib/format.js';
+  import { fetchJsonWithRetry } from '../lib/fetchJson.js';
+  import { currentUnitSystem } from '../lib/units.js';
+  import { t, activityTypeLabel } from '../lib/i18n.js';
+  import { currentLang } from '../lib/lang.js';
+
+  // Fixed dot order (matches ACTIVITY_COLORS' own key order) so the same activity type always
+  // lands in the same visual slot across cells, instead of reshuffling by whichever type
+  // happened to accumulate the most that period.
+  const TYPE_ORDER = Object.keys(ACTIVITY_COLORS);
+
+  const gridEl = document.getElementById('cal-grid');
+  const breadcrumbEl = document.getElementById('cal-breadcrumb');
+  const dayDetailEl = document.getElementById('cal-day-detail');
+  const loadingEl = document.getElementById('cal-loading');
+  if (!(gridEl instanceof HTMLElement) || !breadcrumbEl || !dayDetailEl) throw new Error('calendar page missing expected DOM nodes');
+
+  let activities = [];
+  let calMap = new Map();
+  let level = 'year'; // 'year' | 'month' | 'day'
+  let curYear = null;
+  let curMonth = null;
+
+  // `first` is the calendar date of the very first tracked activity (activities.json is stored
+  // date-ascending app-wide, e.g. index.astro's activities[0]/activities[activities.length-1]
+  // convention) - the year grid starts there instead of an arbitrary fixed window, and the first
+  // year's month grid / first month's day grid start there too instead of padding back to
+  // January 1st with periods that could never have data.
+  const todayVn = toVnDate(new Date().toISOString());
+  const today = { y: todayVn.getUTCFullYear(), m: todayVn.getUTCMonth() + 1, d: todayVn.getUTCDate() };
+  let first = { y: today.y, m: today.m, d: today.d };
+
+  // byType (Map<type, {km,movingTimeSec,calories,count}>) in a fixed, stable order - only the
+  // types actually present in this period, so a cell with just a Run has exactly one dot.
+  function orderedTypes(byType) {
+    if (!byType) return [];
+    return TYPE_ORDER.filter((t) => byType.has(t)).map((t) => [t, byType.get(t)]);
+  }
+
+  function dotTooltip(type, totals, lang) {
+    const parts = [];
+    if (CALENDAR_DISTANCE_TYPES.has(type)) parts.push(formatDistance(totals.km, currentUnitSystem()));
+    parts.push(formatDuration(totals.movingTimeSec));
+    parts.push(`${formatNumber(totals.calories)} ${t(lang, 'common.calories')}`);
+    return `${activityTypeLabel(lang, type)}: ${parts.join(' · ')}`;
+  }
+
+  // Combined-total text lines shown under the dots (every type folded together) - one figure per
+  // line; km is left out when zero (an all-Crossfit period has none).
+  function totalLines(total, lang) {
+    const lines = [];
+    if (total.km > 0) lines.push(formatDistance(total.km, currentUnitSystem()));
+    lines.push(formatDuration(total.movingTimeSec));
+    lines.push(`${formatNumber(total.calories)} ${t(lang, 'common.calories')}`);
+    return lines;
+  }
+
+  function makeCell({ label, byType, total, isToday, empty, onClick, emptyText, lang } = {}) {
+    if (empty) {
+      const div = document.createElement('div');
+      div.className = 'cal-cell empty';
+      return div;
+    }
+    const hasData = total && total.count > 0;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cal-cell' + (isToday ? ' today' : '') + (hasData ? '' : ' no-data');
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'cal-cell-label';
+    labelEl.textContent = label;
+    btn.appendChild(labelEl);
+
+    if (hasData) {
+      const body = document.createElement('span');
+      body.className = 'cal-cell-body';
+
+      const dotsCol = document.createElement('span');
+      dotsCol.className = 'cal-type-dots';
+      for (const [type, typeTotals] of orderedTypes(byType)) {
+        const dot = document.createElement('span');
+        dot.className = 'cal-type-dot';
+        dot.style.background = activityColor(type);
+        dot.title = dotTooltip(type, typeTotals, lang);
+        dotsCol.appendChild(dot);
+      }
+      body.appendChild(dotsCol);
+
+      const statsCol = document.createElement('span');
+      statsCol.className = 'cal-cell-stats';
+      for (const line of totalLines(total, lang)) {
+        const lineEl = document.createElement('span');
+        lineEl.className = 'cal-cell-stat';
+        lineEl.textContent = line;
+        statsCol.appendChild(lineEl);
+      }
+      body.appendChild(statsCol);
+
+      btn.appendChild(body);
+    } else {
+      const emptyEl = document.createElement('span');
+      emptyEl.className = 'cal-cell-stat';
+      emptyEl.textContent = emptyText ?? '–';
+      btn.appendChild(emptyEl);
+    }
+
+    if (onClick) btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  function setBreadcrumb(parts) {
+    breadcrumbEl.innerHTML = '';
+    parts.forEach((p, i) => {
+      if (i > 0) {
+        const sep = document.createElement('span');
+        sep.className = 'cal-breadcrumb-sep';
+        sep.textContent = '›';
+        breadcrumbEl.appendChild(sep);
+      }
+      if (p.onClick) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cal-breadcrumb-link';
+        btn.textContent = p.label;
+        btn.addEventListener('click', p.onClick);
+        breadcrumbEl.appendChild(btn);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'cal-breadcrumb-current';
+        span.textContent = p.label;
+        breadcrumbEl.appendChild(span);
+      }
+    });
+  }
+
+  function goYear() { level = 'year'; curYear = null; curMonth = null; render(); }
+  function goMonth(year) { level = 'month'; curYear = year; curMonth = null; render(); }
+  function goDay(year, month) { level = 'day'; curYear = year; curMonth = month; render(); }
+
+  function showDayDetail(year, month, day) {
+    const lang = currentLang();
+    const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayActivities = activities.filter((a) => toVnDate(a.date).toISOString().slice(0, 10) === dateKey);
+    dayDetailEl.innerHTML = '';
+    if (!dayActivities.length) { dayDetailEl.hidden = true; return; }
+
+    const heading = document.createElement('h3');
+    heading.textContent = t(lang, 'calendar.dayActivitiesHeading', { day, month, year });
+    dayDetailEl.appendChild(heading);
+
+    const list = document.createElement('div');
+    list.className = 'cal-day-list';
+    for (const a of dayActivities) {
+      const row = document.createElement('a');
+      row.className = 'cal-day-item';
+      row.href = `/activities/${a.id}`;
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.style.background = activityColor(a.type);
+      badge.textContent = activityTypeLabel(lang, a.type);
+      const name = document.createElement('span');
+      name.className = 'cal-day-item-name';
+      name.textContent = a.name;
+      const stats = document.createElement('span');
+      stats.className = 'cal-day-item-stats';
+      stats.textContent = `${formatDistance(a.distanceKm, currentUnitSystem())} · ${formatDuration(a.movingTimeSec)}`;
+      row.append(badge, name, stats);
+      list.appendChild(row);
+    }
+    dayDetailEl.appendChild(list);
+    dayDetailEl.hidden = false;
+  }
+
+  // Only years/months/days that could actually have happened are ever rendered: the year grid
+  // stops at the current year (no padding into the future), the first year's month grid starts
+  // at the first tracked month, the current year's month grid stops at the current month, and
+  // the equivalent boundary months trim their day grid the same way (down to the day, not just
+  // the month) - see the `first` load-time note above.
+  function renderYearLevel() {
+    const lang = currentLang();
+    setBreadcrumb([{ label: t(lang, 'calendar.allYears') }]);
+    gridEl.className = 'cal-grid level-year';
+    for (let y = first.y; y <= today.y; y++) {
+      const bucket = calMap.get(y);
+      gridEl.appendChild(makeCell({
+        label: String(y),
+        byType: bucket?.byType,
+        total: bucket?.total,
+        isToday: y === today.y,
+        onClick: () => goMonth(y),
+        lang,
+      }));
+    }
+  }
+
+  function renderMonthLevel() {
+    const lang = currentLang();
+    const monthNames = t(lang, 'calendar.monthNames');
+    setBreadcrumb([
+      { label: t(lang, 'calendar.allYears'), onClick: goYear },
+      { label: String(curYear) },
+    ]);
+    gridEl.className = 'cal-grid level-month';
+    const yearBucket = calMap.get(curYear);
+    const monthStart = curYear === first.y ? first.m : 1;
+    const monthEnd = curYear === today.y ? today.m : 12;
+    for (let m = monthStart; m <= monthEnd; m++) {
+      const bucket = yearBucket?.months.get(m);
+      gridEl.appendChild(makeCell({
+        label: monthNames[m - 1],
+        byType: bucket?.byType,
+        total: bucket?.total,
+        isToday: curYear === today.y && m === today.m,
+        onClick: () => goDay(curYear, m),
+        lang,
+      }));
+    }
+  }
+
+  function renderDayLevel() {
+    const lang = currentLang();
+    const monthNames = t(lang, 'calendar.monthNames');
+    setBreadcrumb([
+      { label: t(lang, 'calendar.allYears'), onClick: goYear },
+      { label: String(curYear), onClick: () => goMonth(curYear) },
+      { label: monthNames[curMonth - 1] },
+    ]);
+    gridEl.className = 'cal-grid level-day';
+
+    for (const label of t(lang, 'common.dow')) {
+      const head = document.createElement('div');
+      head.className = 'cal-dow-label';
+      head.textContent = label;
+      gridEl.appendChild(head);
+    }
+
+    const firstDow = (new Date(Date.UTC(curYear, curMonth - 1, 1)).getUTCDay() + 6) % 7; // Monday = 0
+    const daysInMonth = new Date(Date.UTC(curYear, curMonth, 0)).getUTCDate();
+    const monthBucket = calMap.get(curYear)?.months.get(curMonth);
+    const dayStart = curYear === first.y && curMonth === first.m ? first.d : 1;
+    const dayEnd = curYear === today.y && curMonth === today.m ? today.d : daysInMonth;
+
+    for (let i = 0; i < firstDow; i++) gridEl.appendChild(makeCell({ empty: true }));
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      if (d < dayStart || d > dayEnd) { gridEl.appendChild(makeCell({ empty: true })); continue; }
+      const dayBucket = monthBucket?.days.get(d);
+      gridEl.appendChild(makeCell({
+        label: String(d),
+        byType: dayBucket?.byType,
+        total: dayBucket?.total,
+        emptyText: t(lang, 'calendar.restDay'),
+        isToday: curYear === today.y && curMonth === today.m && d === today.d,
+        onClick: () => showDayDetail(curYear, curMonth, d),
+        lang,
+      }));
+    }
+
+    const trailing = (7 - ((firstDow + daysInMonth) % 7)) % 7;
+    for (let i = 0; i < trailing; i++) gridEl.appendChild(makeCell({ empty: true }));
+  }
+
+  function render() {
+    gridEl.innerHTML = '';
+    dayDetailEl.hidden = true;
+    dayDetailEl.innerHTML = '';
+    if (level === 'year') renderYearLevel();
+    else if (level === 'month') renderMonthLevel();
+    else renderDayLevel();
+  }
+
+  fetchJsonWithRetry('/data/activities.json')
+    .then((data) => {
+      activities = data;
+      calMap = calendarTotals(data);
+      if (data.length) {
+        const firstVn = toVnDate(data[0].date);
+        first = { y: firstVn.getUTCFullYear(), m: firstVn.getUTCMonth() + 1, d: firstVn.getUTCDate() };
+      }
+      loadingEl?.remove();
+      gridEl.hidden = false;
+      render();
+    })
+    .catch((err) => {
+      console.error('Failed to load activities.json', err);
+      if (loadingEl) {
+        const lang = currentLang();
+        loadingEl.textContent = t(lang, 'common.loadError');
+        const retryBtn = document.createElement('button');
+        retryBtn.textContent = t(lang, 'common.retry');
+        retryBtn.addEventListener('click', () => location.reload());
+        loadingEl.appendChild(retryBtn);
+      }
+    });
+
+  // Re-render the current level (year/month/day) in place - render() reads currentUnitSystem()/
+  // currentLang() fresh on every call, so this just needs to happen again after either toggle fires.
+  document.addEventListener('unitschange', () => { if (!gridEl.hidden) render(); });
+  document.addEventListener('langchange', () => { if (!gridEl.hidden) render(); });
+</script>

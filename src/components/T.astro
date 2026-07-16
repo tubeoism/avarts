@@ -1,0 +1,19 @@
+---
+// Zero-flash build-time translation: renders BOTH languages as sibling spans, switched purely by
+// CSS `[data-lang-vi]`/`[data-lang-en]` (see global.css) keyed off `<html data-lang>` - same
+// zero-flash idiom already used for the theme/units/lang toggle-button labels in Layout.astro.
+// Replaces the old `data-i18n` attribute + post-load `repaintLangNodes()` JS repaint for
+// build-time-rendered text, which had a real (measured) flash of Vietnamese before JS corrected it
+// to English on every full-page navigation - CSS is render-blocking, so this has none.
+// `vars` is usually a plain object of already-formatted values (dates/numbers - format.js's job,
+// language-invariant). Pass a function `(lang) => object` instead when a field inside vars is
+// itself a translated string (e.g. `zoneOptimal: t(DEFAULT_LANG, 'chart.tsbZoneOptimal')`), so it
+// re-resolves per language rather than baking one language's translation into both.
+// IMPORTANT: keep the two <span>s on one line, no whitespace between them - a newline/indent here
+// would leave a stray whitespace text node next to the hidden span in some layouts (e.g. table
+// cells, ellipsis-truncated labels).
+import { t } from '../lib/i18n.js';
+const { key, vars } = Astro.props;
+const resolve = (lang) => (typeof vars === 'function' ? vars(lang) : vars);
+---
+<span data-lang-vi>{t('vi', key, resolve('vi'))}</span><span data-lang-en>{t('en', key, resolve('en'))}</span>

@@ -1,0 +1,5 @@
+{
+  "title": "All Routes",
+  "subtitle": "Every recorded GPS route, shown on a single map.",
+  "loadError": "Couldn't load route data. "
+}

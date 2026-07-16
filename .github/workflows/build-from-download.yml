@@ -1,0 +1,121 @@
+name: Build from downloaded data
+
+# Fastest way to bootstrap/refresh activity history from a Strava bulk export placed in download/
+# instead of a directory on someone's own machine - see download/README.md for how to get data in
+# here, and CLAUDE.md "3 cách tạo lập dữ liệu" for how this fits alongside the other 2 sync paths
+# (nightly MCP routine, and the rate-limited strava-api-sync.yml REST API backfill). Manual trigger
+# only - this is a one-off/occasional bootstrap action, not something that should run unattended.
+#
+# Two modes (input `mode`, defaults to full-reset):
+#   full-reset  - wipes ALL existing generated data + retained-raw/ first (scripts/etl/
+#                 wipe-data.mjs), then runs the full ETL pipeline (run.mjs) against download/,
+#                 same as `npm run etl`. Use for bootstrapping a fork from scratch, or disaster
+#                 recovery / picking up a completely fresh Strava export.
+#   incremental - does NOT wipe anything. Only decompresses/processes activities present in
+#                 download/'s CSV but missing from retained-raw/activities.csv (scripts/etl/
+#                 build-incremental-from-csv.mjs), then merges just those into the already-
+#                 committed public/data/*.json. Much faster than full-reset when download/ is
+#                 mostly the same export as last time plus a handful of newer activities - skips
+#                 re-decompressing/re-folding the GPS of everything already processed.
+# Both modes always finish by refreshing retained-raw/ from download/ in full (download/ is a
+# complete bulk export, so it's always a safe superset to copy from regardless of mode) and
+# resetting the REST API backfill state, since retained-raw/ now reflects full history either way.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "full-reset (wipe everything and rebuild) or incremental (only add activities missing from retained-raw/)"
+        required: true
+        default: full-reset
+        type: choice
+        options:
+          - full-reset
+          - incremental
+
+permissions:
+  contents: write
+
+# Shares a concurrency group with strava-api-sync.yml and wipe-data.yml: all three write to the
+# same activities.json/public/data files and push straight to main, so they must never run at the
+# same time - this queues whichever one instead of racing.
+concurrency:
+  group: strava-api-sync
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify download/ has a Strava export in it
+        run: |
+          if [ ! -f download/activities.csv ]; then
+            echo "::error::download/activities.csv not found. Extract your Strava bulk export and copy its contents directly into download/ (see download/README.md), commit + push, then re-run this workflow." >&2
+            exit 1
+          fi
+
+      - name: "full-reset: wipe existing generated data + retained-raw/"
+        if: ${{ github.event.inputs.mode == 'full-reset' }}
+        run: node scripts/etl/wipe-data.mjs
+
+      - name: "full-reset: run full ETL against download/"
+        if: ${{ github.event.inputs.mode == 'full-reset' }}
+        run: STRAVA_EXPORT_DIR=download npm run etl
+
+      - name: "incremental: merge only the activities missing from retained-raw/"
+        if: ${{ github.event.inputs.mode == 'incremental' }}
+        run: STRAVA_EXPORT_DIR=download node scripts/etl/build-incremental-from-csv.mjs
+
+      - name: Build to verify the ETL output is usable
+        run: npm run build
+
+      - name: Refresh retained-raw/ from download/ (PII-scrubbed, allowlisted files only)
+        run: node scripts/etl/refresh-retained-raw.mjs
+
+      - name: Reset API backfill state (this run just supplied full history directly)
+        run: |
+          cat > scripts/etl/api/backfill-state.json <<'EOF'
+          {
+            "done": true,
+            "cursorBeforeEpoch": null,
+            "lastRunStopReason": null
+          }
+          EOF
+
+      - name: Clear download/ contents (keeps the folder + its placeholders)
+        run: node scripts/etl/clear-download.mjs
+
+      - name: Commit and push
+        env:
+          BUILD_MODE: ${{ github.event.inputs.mode }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing changed - was download/ actually empty, or did incremental mode find nothing new?"
+            exit 0
+          fi
+          git commit -m "Build from downloaded Strava export ($BUILD_MODE)"
+          for attempt in 1 2 3 4; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Push failed (attempt $attempt), rebasing onto latest main and retrying..."
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 5))
+          done
+          echo "Push failed after retries" >&2
+          exit 1

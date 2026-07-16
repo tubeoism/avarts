@@ -1,0 +1,161 @@
+---
+import Layout from '../layouts/Layout.astro';
+import GoalRing from '../components/GoalRing.astro';
+import { loadActivities, loadGoalTargets } from '../lib/data.mjs';
+import { periodBounds, inRange, goalGroupTotals, yearlyGoalTotals, GOAL_GROUPS } from '../lib/stats.mjs';
+import { formatNumber } from '../lib/format.js';
+import { t, DEFAULT_LANG } from '../lib/i18n.js';
+import T from '../components/T.astro';
+import ChartHeading from '../components/ChartHeading.astro';
+
+const activities = loadActivities();
+const targets = loadGoalTargets();
+const groupLabels = Object.keys(GOAL_GROUPS);
+
+const referenceDate = activities.length ? activities[activities.length - 1].date : new Date().toISOString();
+const bounds = periodBounds(referenceDate);
+const weekTotals = goalGroupTotals(inRange(activities, bounds.week.start, bounds.week.end));
+const monthTotals = goalGroupTotals(inRange(activities, bounds.month.start, bounds.month.end));
+const yearlyTotals = yearlyGoalTotals(activities); // newest year first
+
+const unitLabel = (unit) => (unit === 'hour' ? t(DEFAULT_LANG, 'unit.hour') : 'km');
+const actualFor = (totals, group, unit) => (unit === 'hour' ? totals[group].hours : totals[group].km);
+const pctOf = (actual, target) => (target ? Math.round((actual / target) * 1000) / 10 : 0);
+
+function goalRow(totals, period) {
+  return groupLabels.map((group) => {
+    const cfg = targets[period][group];
+    const actual = actualFor(totals, group, cfg.unit);
+    return { group, actual, target: cfg.target, unit: cfg.unit, percent: pctOf(actual, cfg.target) };
+  });
+}
+
+const weekRow = goalRow(weekTotals, 'week');
+const monthRow = goalRow(monthTotals, 'month');
+---
+<Layout titleKey="nav.goals">
+  <h1><T key="goals.title" /></h1>
+  <p class="subtitle"><T key="goals.subtitle" /></p>
+
+  <div class="card">
+    <h2><T key="common.thisWeek" /></h2>
+    <div class="goal-row">
+      {weekRow.map((g) => (
+        <div class="goal-tile">
+          <GoalRing size={64} strokeWidth={8} fraction={g.target ? g.actual / g.target : 0} percent={g.percent} />
+          <div class="goal-tile-label"><T key={g.group === 'Crossfit' ? 'goalGroup.crossfit' : `activityType.${g.group}`} /></div>
+          <div class="goal-tile-sub" data-goal-unit={g.unit} data-actual={g.actual} data-target={g.target}>{formatNumber(g.actual, 1)} / {formatNumber(g.target, 0)} {unitLabel(g.unit)}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><T key="common.thisMonth" /></h2>
+    <div class="goal-row">
+      {monthRow.map((g) => (
+        <div class="goal-tile">
+          <GoalRing size={64} strokeWidth={8} fraction={g.target ? g.actual / g.target : 0} percent={g.percent} />
+          <div class="goal-tile-label"><T key={g.group === 'Crossfit' ? 'goalGroup.crossfit' : `activityType.${g.group}`} /></div>
+          <div class="goal-tile-sub" data-goal-unit={g.unit} data-actual={g.actual} data-target={g.target}>{formatNumber(g.actual, 1)} / {formatNumber(g.target, 0)} {unitLabel(g.unit)}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="goals.yearGoalsHeading"><T key="goals.yearGoalsSubtitle" /></ChartHeading>
+    <div style="overflow-x:auto">
+      <table class="goal-table">
+        <thead>
+          <tr>
+            <th><T key="common.year" /></th>
+            {groupLabels.map((group) => <th><T key={group === 'Crossfit' ? 'goalGroup.crossfit' : `activityType.${group}`} /></th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {yearlyTotals.map(({ year, groups }) => (
+            <tr>
+              <td class="goal-table-year">{year}</td>
+              {groupLabels.map((group) => {
+                const cfg = targets.year[group];
+                const actual = actualFor(groups, group, cfg.unit);
+                const percent = pctOf(actual, cfg.target);
+                return (
+                  <td>
+                    <div
+                      class="goal-cell"
+                      data-goal-unit={cfg.unit}
+                      data-actual={actual}
+                      data-target={cfg.target}
+                      title={`${formatNumber(actual, 1)} / ${formatNumber(cfg.target, 0)} ${unitLabel(cfg.unit)}`}
+                    >
+                      <GoalRing size={44} strokeWidth={6} fraction={cfg.target ? actual / cfg.target : 0} percent={percent} />
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .goal-table {
+    width: auto;
+    min-width: 100%;
+  }
+  .goal-table th,
+  .goal-table td {
+    text-align: center;
+  }
+  .goal-table th:first-child,
+  .goal-table td:first-child {
+    text-align: left;
+  }
+  .goal-table-year {
+    font-weight: 600;
+  }
+  .goal-cell {
+    display: flex;
+    justify-content: center;
+  }
+</style>
+
+<script>
+  import { onUnitsChange, currentUnitSystem } from '../lib/units.js';
+  import { formatNumber, toMiles } from '../lib/format.js';
+  import { t } from '../lib/i18n.js';
+  import { currentLang, onLangChange } from '../lib/lang.js';
+
+  function convert(value, unit, system) {
+    return unit === 'km' && system === 'imperial' ? toMiles(value) : value;
+  }
+  function unitLabel(unit, system, lang) {
+    if (unit === 'hour') return t(lang, 'unit.hour');
+    return system === 'imperial' ? 'mi' : 'km';
+  }
+
+  // Week/month tiles are plain text (safe to overwrite via textContent); the yearly table's
+  // goal-cell divs wrap a GoalRing SVG instead, so only their `title` tooltip is unit-aware.
+  // This is the one spot in the app where a displayed string depends on BOTH the unit system
+  // and the language at once ("giờ"/"hr" vs "km"/"mi"), so it repaints on both toggles.
+  function repaint() {
+    const system = currentUnitSystem();
+    const lang = currentLang();
+    document.querySelectorAll('[data-goal-unit]').forEach((el) => {
+      const unit = el.dataset.goalUnit;
+      const actual = Number(el.dataset.actual);
+      const target = Number(el.dataset.target);
+      const text = `${formatNumber(convert(actual, unit, system), 1)} / ${formatNumber(convert(target, unit, system), 0)} ${unitLabel(unit, system, lang)}`;
+      if (el.hasAttribute('title')) el.title = text;
+      else el.textContent = text;
+    });
+  }
+
+  onUnitsChange(repaint);
+  onLangChange(repaint);
+</script>

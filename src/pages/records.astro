@@ -1,0 +1,50 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { loadRecords } from '../lib/data.mjs';
+import { formatDuration, formatPace, formatSpeed, formatDate } from '../lib/format.js';
+import { activityTypeLabel } from '../lib/i18n.js';
+import T from '../components/T.astro';
+
+const records = loadRecords();
+const SECTIONS = [
+  { type: 'Run', order: ['1k', '5k', '10k', '15k', '10mi', 'half', '15mi', '30k', '20mi', 'marathon'] },
+  { type: 'Ride', order: ['5k', '10k', '25k', '30k', '40k', '50k'] },
+];
+const sections = SECTIONS.map(({ type, order }) => ({
+  type,
+  records: records
+    .filter((r) => r.type === type)
+    .sort((a, b) => order.indexOf(a.distanceKey) - order.indexOf(b.distanceKey)),
+}));
+---
+<Layout titleKey="nav.records">
+  <h1><T key="records.title" /></h1>
+  <p class="subtitle"><T key="records.subtitle" /></p>
+
+  {sections.map(({ type, records: sorted }) => (
+    <>
+      <h2><T key={`activityType.${type}`} /></h2>
+      <div class="grid">
+        {sorted.map((r) => (
+          <div class="stat-card">
+            <div class="label">{r.label}</div>
+            <div class="value">{formatDuration(r.timeSec)}</div>
+            {type === 'Ride' ? (
+              <div class="subtitle" style="margin:4px 0 0" data-unit="speed" data-value={r.speedKmh}>{formatSpeed(r.speedKmh)}</div>
+            ) : (
+              <div class="subtitle" style="margin:4px 0 0" data-unit="pace" data-value={r.paceMinPerKm}>{formatPace(r.paceMinPerKm)}</div>
+            )}
+            <div class="subtitle" style="margin:2px 0 0">
+              <a href={`/activities/${r.activityId}`}>{formatDate(r.date)} · {r.activityName}</a>
+            </div>
+          </div>
+        ))}
+      </div>
+      {sorted.length === 0 && (
+        <div class="empty-state">
+          <T key="records.emptyState" vars={(lang) => ({ type: activityTypeLabel(lang, type) })} />
+        </div>
+      )}
+    </>
+  ))}
+</Layout>

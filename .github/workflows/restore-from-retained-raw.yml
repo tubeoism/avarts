@@ -1,0 +1,105 @@
+name: Restore from retained raw
+
+# Refreshes ALL generated activity data (activities.json, streams/, records.json,
+# best-efforts.json, gear.json, events.json, fitness.json, routes.json, heatgrid.json) by
+# rerunning the full ETL pipeline (run.mjs) against retained-raw/ - the same effect as
+# `STRAVA_EXPORT_DIR=retained-raw npm run etl` on a machine that has retained-raw/ but no fresh
+# Strava export handy. Use this after fixing a bug in the ETL logic itself (e.g. a parsing bug
+# that needs recomputing from raw GPS/CSV, not just a code change) to apply the fix to already-
+# committed data without waiting for a brand-new Strava export.
+#
+# retained-raw/activities.csv PLUS the raw activities/*.fit.gz|.gpx.gz|.tcx.gz files are the
+# source - retained-raw/ is only as fresh as the last "Build from downloaded data" run (either
+# mode) refreshed it, see CLAUDE.md "Kiến trúc tổng quan".
+#
+# IMPORTANT, read before running: retained-raw/ can be STALE relative to the currently committed
+# activities.json - nightly MCP sync and strava-api-sync.yml add new activities straight to
+# activities.json without ever touching retained-raw/ (it's only refreshed by a fresh Strava
+# download). Any activity added that way since the last retained-raw/ refresh does NOT exist in
+# retained-raw/ at all, so this action's rebuild WILL drop it - deliberately, by design choice, not
+# a bug: this action does a literal from-scratch rebuild off retained-raw/ with no reconciliation
+# against what's currently live. If that matters, run "Build from downloaded data" with a fresh
+# Strava export first (which also refreshes retained-raw/ and so eliminates the gap for that
+# moment in time) before running this, or check download/README.md's export timing against the
+# most recent activity in the live site first. Manual trigger only, gated behind a typed
+# confirmation input for the same reason wipe-data.yml has one - this discards whatever is
+# currently committed in favor of retained-raw/'s version with no way back except `git revert`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type RESTORE to confirm - rebuilds all activity data from retained-raw/, discarding anything not present there (see workflow file comment)"
+        required: true
+
+permissions:
+  contents: write
+
+# Shares a concurrency group with strava-api-sync.yml, build-from-download.yml and wipe-data.yml:
+# all write to the same public/data files and push straight to main, so they must never run at
+# the same time.
+concurrency:
+  group: strava-api-sync
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check confirmation input
+        env:
+          CONFIRM_INPUT: ${{ github.event.inputs.confirm }}
+        run: |
+          if [ "$CONFIRM_INPUT" != "RESTORE" ]; then
+            echo "::error::Input 'confirm' must be exactly 'RESTORE' to proceed (got '$CONFIRM_INPUT')." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify retained-raw/ has data in it
+        run: |
+          if [ ! -f retained-raw/activities.csv ]; then
+            echo "::error::retained-raw/activities.csv not found - there is no raw data to restore from. Run 'Build from downloaded data' with a fresh Strava export first." >&2
+            exit 1
+          fi
+
+      - name: Wipe generated data (keep retained-raw/ - it's the source this run reads from)
+        run: node scripts/etl/wipe-data.mjs --keep-retained-raw
+
+      - name: Run full ETL against retained-raw/
+        run: STRAVA_EXPORT_DIR=retained-raw npm run etl
+
+      - name: Build to verify the ETL output is usable
+        run: npm run build
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing changed - retained-raw/ already matched the committed data."
+            exit 0
+          fi
+          git commit -m "chore: restore data from retained-raw/"
+          for attempt in 1 2 3 4; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Push failed (attempt $attempt), rebasing onto latest main and retrying..."
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 5))
+          done
+          echo "Push failed after retries" >&2
+          exit 1

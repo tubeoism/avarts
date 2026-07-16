@@ -1,0 +1,471 @@
+---
+import Layout from '../layouts/Layout.astro';
+import GoalRing from '../components/GoalRing.astro';
+import { loadActivities, loadGoalTargets } from '../lib/data.mjs';
+import { periodTotals, periodBounds, typeBreakdownForRange, recentWeeklyBuckets, dailyHeatmap, inRange, goalGroupTotals, GOAL_GROUPS } from '../lib/stats.mjs';
+import { formatDuration, formatDistance, activityColor, formatDate } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
+import T from '../components/T.astro';
+import ChartHeading from '../components/ChartHeading.astro';
+
+const activities = loadActivities();
+const referenceDate = activities.length ? activities[activities.length - 1].date : new Date().toISOString();
+const totals = periodTotals(activities, referenceDate);
+const weeks = recentWeeklyBuckets(activities, referenceDate, 30);
+const heatmap = dailyHeatmap(activities, referenceDate, 371);
+
+const goalTargets = loadGoalTargets();
+const bounds = periodBounds(referenceDate);
+const weekGoalTotals = goalGroupTotals(inRange(activities, bounds.week.start, bounds.week.end));
+const weekGoals = Object.keys(GOAL_GROUPS).map((group) => {
+  const cfg = goalTargets.week[group];
+  const actual = cfg.unit === 'hour' ? weekGoalTotals[group].hours : weekGoalTotals[group].km;
+  return { group, actual, target: cfg.target, percent: cfg.target ? Math.round((actual / cfg.target) * 1000) / 10 : 0 };
+});
+
+const recent = activities.slice(-10).reverse();
+
+const weekTypes = [...new Set(weeks.flatMap((w) => w.types.map((ty) => ty.type)))];
+
+const typeRanges = {
+  month: typeBreakdownForRange(activities, bounds.month.start, bounds.month.end),
+  quarter: typeBreakdownForRange(activities, bounds.quarter.start, bounds.quarter.end),
+  year: typeBreakdownForRange(activities, bounds.year.start, bounds.year.end),
+};
+---
+<Layout titleKey="nav.dashboard">
+  <h1><T key="dashboard.title" /></h1>
+  <p class="subtitle"><T key="dashboard.subtitle" vars={{ date: formatDate(referenceDate), count: activities.length, firstDate: formatDate(activities[0]?.date) }} /></p>
+
+  <div class="grid grid-compare">
+    <div class="stat-card stat-card-blue">
+      <div class="label"><T key="common.thisWeek" /></div>
+      <div class="value" data-unit="distance" data-value={totals.week.km}>{formatDistance(totals.week.km)}</div>
+      <div class="subtitle" style="margin:0">{formatDuration(totals.week.movingTimeSec)} · {totals.week.count} <T key="unit.session" /></div>
+    </div>
+    <div class="stat-card stat-card-blue">
+      <div class="label"><T key="common.thisMonth" /></div>
+      <div class="value" data-unit="distance" data-value={totals.month.km}>{formatDistance(totals.month.km)}</div>
+      <div class="subtitle" style="margin:0">{formatDuration(totals.month.movingTimeSec)} · {totals.month.count} <T key="unit.session" /></div>
+    </div>
+    <div class="stat-card stat-card-blue">
+      <div class="label"><T key="dashboard.thisQuarter" /></div>
+      <div class="value" data-unit="distance" data-value={totals.quarter.km}>{formatDistance(totals.quarter.km)}</div>
+      <div class="subtitle" style="margin:0">{formatDuration(totals.quarter.movingTimeSec)} · {totals.quarter.count} <T key="unit.session" /></div>
+    </div>
+    <div class="stat-card stat-card-blue">
+      <div class="label"><T key="dashboard.thisYear" /></div>
+      <div class="value" data-unit="distance" data-value={totals.year.km}>{formatDistance(totals.year.km)}</div>
+      <div class="subtitle" style="margin:0">{formatDuration(totals.year.movingTimeSec)} · {totals.year.count} <T key="unit.session" /></div>
+    </div>
+    <div class="stat-card stat-card-secondary stat-card-yellow">
+      <div class="label"><T key="dashboard.prevWeek" /></div>
+      <div class="value" data-unit="distance" data-value={totals.prevWeek.km}>{formatDistance(totals.prevWeek.km)}</div>
+      <div class="subtitle" style="margin:0">{formatDuration(totals.prevWeek.movingTimeSec)} · {totals.prevWeek.count} <T key="unit.session" /></div>
+    </div>
+    <div class="stat-card stat-card-secondary stat-card-yellow">
+      <div class="label"><T key="dashboard.prevMonth" /></div>
+      <div class="value" data-unit="distance" data-value={totals.prevMonth.km}>{formatDistance(totals.prevMonth.km)}</div>
+      <div class="subtitle" style="margin:0">{formatDuration(totals.prevMonth.movingTimeSec)} · {totals.prevMonth.count} <T key="unit.session" /></div>
+    </div>
+    <div class="stat-card stat-card-secondary stat-card-yellow">
+      <div class="label"><T key="dashboard.prevQuarter" /></div>
+      <div class="value" data-unit="distance" data-value={totals.prevQuarter.km}>{formatDistance(totals.prevQuarter.km)}</div>
+      <div class="subtitle" style="margin:0">{formatDuration(totals.prevQuarter.movingTimeSec)} · {totals.prevQuarter.count} <T key="unit.session" /></div>
+    </div>
+    <div class="stat-card stat-card-secondary stat-card-yellow">
+      <div class="label"><T key="dashboard.prevYearYtd" /></div>
+      <div class="value" data-unit="distance" data-value={totals.prevYearYtd.km}>{formatDistance(totals.prevYearYtd.km)}</div>
+      <div class="subtitle" style="margin:0">{formatDuration(totals.prevYearYtd.movingTimeSec)} · {totals.prevYearYtd.count} <T key="unit.session" /></div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <ChartHeading titleKey="dashboard.weeklyVolumeHeading"><T key="dashboard.weeklyVolumeCaption" /></ChartHeading>
+      <div class="chart-box chart-box-xl">
+        <canvas id="weekly-chart"
+          data-weeks={JSON.stringify(weeks)}
+          data-types={JSON.stringify(weekTypes)}></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <h2><T key="dashboard.typeBreakdownHeading" /></h2>
+      <div class="filters" data-toggle="metric">
+        <button type="button" data-value="time" class="active"><T key="dashboard.totalTimeBtn" /></button>
+        <button type="button" data-value="count"><T key="dashboard.sessionCountBtn" /></button>
+      </div>
+      <div class="filters" data-toggle="range">
+        <button type="button" data-value="month"><T key="common.thisMonth" /></button>
+        <button type="button" data-value="quarter"><T key="dashboard.thisQuarterBtn" /></button>
+        <button type="button" data-value="year" class="active"><T key="dashboard.thisYearYtdBtn" /></button>
+      </div>
+      <div class="chart-box">
+        <canvas id="type-pie-chart" data-series={JSON.stringify(typeRanges)}></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="dashboard.fitnessHeading"><T key="dashboard.fitnessCaption" vars={(lang) => ({ zoneOptimal: t(lang, 'chart.tsbZoneOptimal'), zoneRecovery: t(lang, 'chart.tsbZoneRecovery') })} /></ChartHeading>
+    <div class="chart-box">
+      <canvas id="fitness-chart"></canvas>
+    </div>
+    <p class="subtitle" style="margin:10px 0 0"><a href="/performance#fitness-advanced"><T key="dashboard.fitnessLink" /></a></p>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="dashboard.calendarHeading"><T key="dashboard.calendarCaption" /></ChartHeading>
+    <div id="heatmap" data-days={JSON.stringify(heatmap)}></div>
+  </div>
+
+  <div class="card">
+    <h2><T key="dashboard.thisWeekGoals" /></h2>
+    <div class="goal-row">
+      {weekGoals.map((g) => (
+        <div class="goal-tile">
+          <GoalRing size={56} strokeWidth={7} fraction={g.target ? g.actual / g.target : 0} percent={g.percent} />
+          <div class="goal-tile-label"><T key={g.group === 'Crossfit' ? 'goalGroup.crossfit' : `activityType.${g.group}`} /></div>
+        </div>
+      ))}
+    </div>
+    <p class="subtitle" style="margin:12px 0 0"><a href="/goals"><T key="dashboard.viewAllGoalsLink" /></a></p>
+  </div>
+
+  <div class="card">
+    <h2><T key="dashboard.recentActivitiesHeading" /></h2>
+    <table>
+      <thead><tr>
+        <th><T key="common.date" /></th>
+        <th><T key="common.name" /></th>
+        <th><T key="common.type" /></th>
+        <th><T key="common.distance" /></th>
+        <th><T key="common.time" /></th>
+      </tr></thead>
+      <tbody>
+        {recent.map((a) => (
+          <tr onclick={`location.href='/activities/${a.id}'`} style="cursor:pointer">
+            <td>{formatDate(a.date, a.timezone)}</td>
+            <td>{a.name}</td>
+            <td><span class="badge" style={`background:${activityColor(a.type)}`}><T key={`activityType.${a.type}`} /></span></td>
+            <td data-unit="distance" data-value={a.distanceKm}>{formatDistance(a.distanceKm)}</td>
+            <td>{formatDuration(a.movingTimeSec)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    <p class="subtitle" style="margin:8px 0 0"><a href="/activities"><T key="dashboard.viewAllActivitiesLink" /></a></p>
+  </div>
+</Layout>
+
+<style>
+  .grid-compare {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  @media (max-width: 600px) {
+    .grid-compare {
+      grid-template-columns: 1fr;
+    }
+    .grid-compare > :nth-child(1) { order: 1; } /* thisWeek */
+    .grid-compare > :nth-child(5) { order: 2; } /* prevWeek */
+    .grid-compare > :nth-child(2) { order: 3; } /* thisMonth */
+    .grid-compare > :nth-child(6) { order: 4; } /* prevMonth */
+    .grid-compare > :nth-child(3) { order: 5; } /* thisQuarter */
+    .grid-compare > :nth-child(7) { order: 6; } /* prevQuarter */
+    .grid-compare > :nth-child(4) { order: 7; } /* thisYear */
+    .grid-compare > :nth-child(8) { order: 8; } /* prevYearYtd */
+  }
+  .stat-card-secondary {
+    padding: 12px 16px;
+  }
+  .stat-card-secondary .value {
+    font-size: 18px;
+    margin-top: 2px;
+  }
+  #heatmap {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(7, 12px);
+    gap: 3px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+  #heatmap .cell {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: var(--md-outline-variant);
+  }
+</style>
+
+<script>
+  import Chart from 'chart.js/auto';
+  import { onThemeChange, themeColors } from '../lib/theme.js';
+  import { currentUnitSystem } from '../lib/units.js';
+  import { KM_PER_MILE, formatDistance } from '../lib/format.js';
+  import { tsbZonesPlugin, TSB_ZONES } from '../lib/charts.js';
+  import { t, activityTypeLabel } from '../lib/i18n.js';
+  import { currentLang } from '../lib/lang.js';
+
+  function hexToRgb(hex) {
+    const n = parseInt(hex.replace('#', ''), 16);
+    return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+  }
+
+  // Chart.js doesn't reliably repaint canvases whose colors were mutated in place after
+  // creation (observed: dataset/scale color reassignment + chart.update() left the canvas
+  // showing its original colors) - destroying and recreating the chart on every theme
+  // change sidesteps that and is cheap enough for a handful of personal-dashboard charts.
+  const weeklyCanvas = document.getElementById('weekly-chart');
+  if (weeklyCanvas instanceof HTMLCanvasElement) {
+    const weeks = JSON.parse(weeklyCanvas.dataset.weeks || '[]');
+    const types = JSON.parse(weeklyCanvas.dataset.types || '[]');
+    const labels = weeks.map((w) => {
+      const [, m, d] = w.weekStart.split('-');
+      return `${d}/${m}`;
+    });
+    let chart;
+    // Total-time/calories lines re-sum only the currently visible type datasets (see
+    // legend.onClick below) rather than the bucket-wide unconditional totals, so toggling a
+    // type off in the legend actually moves those two lines instead of leaving them static.
+    function lineDataFor(visibleTypes) {
+      const timeData = weeks.map((w) => {
+        const sec = w.types.filter((wt) => visibleTypes.has(wt.type)).reduce((s, wt) => s + (wt.movingTimeSec || 0), 0);
+        return Math.round((sec / 3600) * 10) / 10;
+      });
+      const calData = weeks.map((w) => Math.round(w.types.filter((wt) => visibleTypes.has(wt.type)).reduce((s, wt) => s + (wt.calories || 0), 0)));
+      return { timeData, calData };
+    }
+    import('../lib/format.js').then(({ activityColor }) => {
+      function render(c) {
+        const lang = currentLang();
+        const system = currentUnitSystem();
+        const distFactor = system === 'imperial' ? 1 / KM_PER_MILE : 1;
+        const distUnit = system === 'imperial' ? 'mi' : 'km';
+        const { timeData, calData } = lineDataFor(new Set(types));
+        chart?.destroy();
+        chart = new Chart(weeklyCanvas, {
+          data: {
+            labels,
+            datasets: [
+              ...types.map((type) => ({
+                type: 'bar',
+                label: activityTypeLabel(lang, type),
+                data: weeks.map((w) => Math.round((w.types.find((wt) => wt.type === type)?.km || 0) * distFactor * 10) / 10),
+                backgroundColor: activityColor(type),
+                stack: 'distance',
+                maxBarThickness: 18,
+                borderRadius: 3,
+                yAxisID: 'y',
+                // Chart.js mixed charts draw by ascending `order` (ties broken by dataset index),
+                // so without an explicit order the stacked bars - added first, thus lower index -
+                // painted over the lines below. Give bars a higher order than the lines so the
+                // lines are drawn last and stay on top.
+                order: 2,
+              })),
+              {
+                type: 'line',
+                label: t(lang, 'dashboard.totalTimeBtn'),
+                data: timeData,
+                borderColor: c.onSurface,
+                backgroundColor: c.onSurface,
+                yAxisID: 'y1',
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                borderWidth: 2,
+                tension: 0.25,
+                order: 1,
+              },
+              {
+                type: 'line',
+                label: t(lang, 'common.calories'),
+                data: calData,
+                borderColor: c.tertiary,
+                backgroundColor: c.tertiary,
+                yAxisID: 'y2',
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                borderWidth: 2,
+                tension: 0.25,
+                order: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: { color: c.onSurface, boxWidth: 12 },
+                onClick(e, legendItem, legend) {
+                  const c2 = legend.chart;
+                  const index = legendItem.datasetIndex;
+                  const barCount = types.length;
+                  if (c2.isDatasetVisible(index)) {
+                    c2.hide(index);
+                    legendItem.hidden = true;
+                  } else {
+                    c2.show(index);
+                    legendItem.hidden = false;
+                  }
+                  if (index < barCount) {
+                    const visibleTypes = new Set(types.filter((_, i) => c2.isDatasetVisible(i)));
+                    const recomputed = lineDataFor(visibleTypes);
+                    c2.data.datasets[barCount].data = recomputed.timeData;
+                    c2.data.datasets[barCount + 1].data = recomputed.calData;
+                    c2.update();
+                  }
+                },
+              },
+            },
+            scales: {
+              x: { stacked: true, ticks: { color: c.onSurfaceVariant, maxRotation: 0, autoSkip: true, maxTicksLimit: 14 }, grid: { display: false } },
+              y: { stacked: true, position: 'left', title: { display: true, text: distUnit, color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { color: c.outlineVariant } },
+              y1: { position: 'right', title: { display: true, text: t(lang, 'unit.hour'), color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { display: false } },
+              y2: { position: 'right', title: { display: true, text: t(lang, 'common.calories'), color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { display: false } },
+            },
+          },
+        });
+      }
+      onThemeChange(render);
+      document.addEventListener('unitschange', () => render(themeColors()));
+      document.addEventListener('langchange', () => render(themeColors()));
+    });
+  }
+
+  fetch('/data/fitness.json')
+    .then((r) => r.json())
+    .then((series) => {
+      const recentSeries = series.slice(-90);
+      const canvas = document.getElementById('fitness-chart');
+      if (!(canvas instanceof HTMLCanvasElement)) return;
+      let chart;
+      onThemeChange((c) => {
+        chart?.destroy();
+        chart = new Chart(canvas, {
+          type: 'line',
+          plugins: [tsbZonesPlugin(TSB_ZONES, { datasetIndex: 2 })],
+          data: {
+            labels: recentSeries.map((p) => p.date),
+            datasets: [
+              { label: 'CTL (Fitness)', data: recentSeries.map((p) => p.ctl), borderColor: c.primary, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
+              { label: 'ATL (Fatigue)', data: recentSeries.map((p) => p.atl), borderColor: c.secondary, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
+              { label: 'TSB (Form)', data: recentSeries.map((p) => p.tsb), borderColor: c.tertiary, pointRadius: 0, borderWidth: 1, borderDash: [4, 3], yAxisID: 'y1' },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { labels: { color: c.onSurface } } },
+            scales: {
+              x: { ticks: { color: c.onSurfaceVariant, maxTicksLimit: 10 }, grid: { display: false } },
+              y: { position: 'left', title: { display: true, text: 'CTL / ATL', color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { color: c.outlineVariant } },
+              y1: { position: 'right', title: { display: true, text: 'TSB', color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { display: false } },
+            },
+          },
+        });
+      });
+    })
+    .catch((err) => console.error('Failed to load fitness.json', err));
+
+  // Activity-type pie chart: metric (time/count) and range (month/quarter/year) are picked
+  // via two independent segmented-button groups; colors reuse the app-wide per-type palette
+  // (activityColor) so a type keeps its identity across the weekly combo chart, badges, etc.
+  {
+    const canvas = document.getElementById('type-pie-chart');
+    if (canvas instanceof HTMLCanvasElement) {
+      const series = JSON.parse(canvas.dataset.series || '{}');
+      const metricGroup = document.querySelector('[data-toggle="metric"]');
+      const rangeGroup = document.querySelector('[data-toggle="range"]');
+      let metric = 'time';
+      let range = 'year';
+      let themeColors = null;
+      let chart;
+
+      function bindToggle(group, onChange) {
+        if (!group) return;
+        group.querySelectorAll('button').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            group.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            onChange(btn.dataset.value);
+          });
+        });
+      }
+
+      function renderPie() {
+        if (!themeColors) return;
+        const c = themeColors;
+        const lang = currentLang();
+        const field = metric === 'time' ? 'movingTimeSec' : 'count';
+        const rows = (series[range] || []).filter((r) => r[field] > 0).sort((a, b) => b[field] - a[field]);
+        chart?.destroy();
+        import('../lib/format.js').then(({ activityColor, formatDuration }) => {
+          chart = new Chart(canvas, {
+            type: 'pie',
+            data: {
+              labels: rows.map((r) => activityTypeLabel(lang, r.type)),
+              datasets: [{
+                data: rows.map((r) => r[field]),
+                backgroundColor: rows.map((r) => activityColor(r.type)),
+                borderColor: c.surface,
+                borderWidth: 2,
+              }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'right', labels: { color: c.onSurface, boxWidth: 12 } },
+                tooltip: {
+                  callbacks: {
+                    label: (ctx) => metric === 'time' ? `${ctx.label}: ${formatDuration(ctx.parsed)}` : `${ctx.label}: ${ctx.parsed} ${t(lang, 'unit.session')}`,
+                  },
+                },
+              },
+            },
+          });
+        });
+      }
+
+      bindToggle(metricGroup, (v) => { metric = v; renderPie(); });
+      bindToggle(rangeGroup, (v) => { range = v; renderPie(); });
+      onThemeChange((c) => { themeColors = c; renderPie(); });
+      document.addEventListener('langchange', renderPie);
+    }
+  }
+
+  const heatmapEl = document.getElementById('heatmap');
+  if (heatmapEl) {
+    const days = JSON.parse(heatmapEl.dataset.days || '[]');
+    const max = Math.max(1, ...days.map((d) => d.km));
+    const cells = [];
+    function tooltipFor(d) {
+      return `${d.date}: ${formatDistance(d.km, currentUnitSystem(), 1)}`;
+    }
+    for (const d of days) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.title = tooltipFor(d);
+      heatmapEl.appendChild(cell);
+      cells.push({ el: cell, km: d.km, date: d.date });
+    }
+    onThemeChange((c) => {
+      const rgb = hexToRgb(c.primary);
+      for (const { el, km } of cells) {
+        if (km > 0) {
+          const alpha = 0.25 + (km / max) * 0.75;
+          el.style.background = `rgba(${rgb}, ${alpha.toFixed(2)})`;
+        } else {
+          el.style.background = '';
+        }
+      }
+    });
+    document.addEventListener('unitschange', () => {
+      for (const cell of cells) cell.el.title = tooltipFor(cell);
+    });
+  }
+</script>

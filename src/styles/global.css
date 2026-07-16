@@ -1,0 +1,624 @@
+@import '@fontsource/be-vietnam-pro/400.css';
+@import '@fontsource/be-vietnam-pro/500.css';
+@import '@fontsource/be-vietnam-pro/600.css';
+@import '@fontsource/be-vietnam-pro/700.css';
+@import '@fontsource/be-vietnam-pro/800.css';
+
+/*
+ * Material Design 3 color roles, hand-tuned from a Strava-orange seed hue (~18°) and
+ * verified with a WCAG contrast script rather than a design tool - every on-X/X pair
+ * below is >=4.5:1 (>=7:1 for on-surface/surface) and outline/surface is >=3:1.
+ * Dark/light is switched via [data-theme] on <html>, set by an inline script in
+ * Layout.astro from the current GMT+7 hour - see src/lib/theme.js. It is intentionally
+ * NOT driven by prefers-color-scheme: the product requirement is time-of-day based
+ * (dark 7PM-6AM GMT+7), not the visitor OS setting, and the toggle button overrides it
+ * for the current page view only (nothing is persisted).
+ */
+:root {
+  --md-primary: #97360c;
+  --md-on-primary: #ffffff;
+  --md-primary-container: #fde3d8;
+  --md-on-primary-container: #551e07;
+
+  --md-secondary: #2d5e76;
+  --md-on-secondary: #ffffff;
+  --md-secondary-container: #deeff7;
+  --md-on-secondary-container: #12303f;
+
+  --md-tertiary: #206f47;
+  --md-on-tertiary: #f8fbfa;
+  --md-tertiary-container: #d9f2e6;
+  --md-on-tertiary-container: #103724;
+
+  --md-error: #aa2418;
+  --md-on-error: #ffffff;
+  --md-error-container: #fbe1df;
+  --md-on-error-container: #59130d;
+
+  /* Extra pastel container pairs (yellow/purple) for stat-card color-coding only, not part of
+     the core MD3 role set above - contrast-verified >=4.5:1 the same way (see file header). */
+  --md-yellow-container: #fbeec6;
+  --md-on-yellow-container: #4a3a06;
+  --md-purple-container: #ede0fb;
+  --md-on-purple-container: #402569;
+
+  --md-surface: #fdfcfc;
+  --md-on-surface: #221f1c;
+  --md-surface-variant: #eeebe8;
+  --md-on-surface-variant: #696159;
+  --md-outline: #847a71;
+  --md-outline-variant: #d7d1cc;
+
+  --md-surface-container-lowest: #ffffff;
+  --md-surface-container-low: #f9f7f6;
+  --md-surface-container: #f5f2f0;
+  --md-surface-container-high: #eeebe7;
+  --md-surface-container-highest: #e7e3df;
+
+  --md-scrim: rgba(0, 0, 0, 0.5);
+  --md-shadow: 220 20 10;
+
+  --md-shape-xs: 6px;
+  --md-shape-sm: 12px;
+  --md-shape-md: 16px;
+  --md-shape-lg: 24px;
+  --md-shape-full: 999px;
+}
+
+:root[data-theme='dark'] {
+  --md-primary: #f39268;
+  --md-on-primary: #391b0e;
+  --md-primary-container: #67341e;
+  --md-on-primary-container: #fbddd0;
+
+  --md-secondary: #88c1dd;
+  --md-on-secondary: #122a36;
+  --md-secondary-container: #254556;
+  --md-on-secondary-container: #d4ebf7;
+
+  --md-tertiary: #89d2ad;
+  --md-on-tertiary: #0f2e1f;
+  --md-tertiary-container: #28533d;
+  --md-on-tertiary-container: #d1f0e0;
+
+  --md-error: #f1887e;
+  --md-on-error: #411410;
+  --md-error-container: #6b2a24;
+  --md-on-error-container: #fbd3d0;
+
+  --md-yellow-container: #5c4a15;
+  --md-on-yellow-container: #f6e8ba;
+  --md-purple-container: #4a3370;
+  --md-on-purple-container: #ecdffb;
+
+  --md-surface: #181716;
+  --md-on-surface: #edebe9;
+  --md-surface-variant: #3e3832;
+  --md-on-surface-variant: #c2bdb7;
+  --md-outline: #9c948b;
+  --md-outline-variant: #5a5249;
+
+  --md-surface-container-lowest: #110f0e;
+  --md-surface-container-low: #211f1c;
+  --md-surface-container: #292623;
+  --md-surface-container-high: #34302d;
+  --md-surface-container-highest: #423d38;
+
+  --md-scrim: rgba(0, 0, 0, 0.7);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--md-surface);
+  color: var(--md-on-surface);
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+a { color: var(--md-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+::selection { background: var(--md-primary-container); color: var(--md-on-primary-container); }
+
+:focus-visible {
+  outline: 2px solid var(--md-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.layout {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 20px 48px;
+}
+
+@media (max-width: 600px) {
+  .layout { padding: 0 14px 96px; }
+}
+@media (min-width: 601px) and (max-width: 839px) {
+  .layout { padding: 0 20px 96px; }
+}
+
+/* ---------- Top app bar ---------- */
+header.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--md-surface-container-low);
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+header.app-bar .brand {
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--md-primary);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+header.app-bar .app-bar-spacer { flex: 1; }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--md-shape-full);
+  border: none;
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  flex: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.icon-btn:hover { background: color-mix(in srgb, var(--md-on-surface) 8%, transparent); color: var(--md-on-surface); }
+.icon-btn:active { background: color-mix(in srgb, var(--md-on-surface) 12%, transparent); }
+.icon-btn .icon { width: 22px; height: 22px; }
+
+.theme-toggle .icon-moon { display: none; }
+:root[data-theme='dark'] .theme-toggle .icon-sun { display: none; }
+:root[data-theme='dark'] .theme-toggle .icon-moon { display: block; }
+
+.units-toggle {
+  width: auto;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.units-toggle .unit-label-imperial { display: none; }
+:root[data-units='imperial'] .units-toggle .unit-label-metric { display: none; }
+:root[data-units='imperial'] .units-toggle .unit-label-imperial { display: inline; }
+
+.lang-toggle {
+  width: auto;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.lang-toggle .lang-label-en { display: none; }
+:root[data-lang='en'] .lang-toggle .lang-label-vi { display: none; }
+:root[data-lang='en'] .lang-toggle .lang-label-en { display: inline; }
+
+/* ---------- Build-time i18n text (see T.astro) ---------- */
+/* !important: this must win over any component-scoped "span { display: ... }" rule elsewhere
+   (e.g. nav.app-nav .nav-item span below) - visibility of a translated span is a global invariant,
+   not something a component's own layout CSS should be able to override by accident. */
+[data-lang-en] { display: none !important; }
+:root[data-lang='en'] [data-lang-vi] { display: none !important; }
+:root[data-lang='en'] [data-lang-en] { display: inline !important; }
+
+/* ---------- Navigation ---------- */
+nav.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 20px 4px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+nav.app-nav .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: var(--md-shape-full);
+  color: var(--md-on-surface-variant);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+nav.app-nav .nav-item .icon { width: 20px; height: 20px; flex: none; }
+nav.app-nav .nav-item span { display: inline; }
+
+nav.app-nav .nav-item:hover {
+  background: color-mix(in srgb, var(--md-on-surface) 6%, transparent);
+  text-decoration: none;
+}
+
+nav.app-nav .nav-item.active {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+  font-weight: 600;
+}
+
+@media (max-width: 839px) {
+  nav.app-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    justify-content: space-around;
+    gap: 0;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    background: var(--md-surface-container-low);
+    border-top: 1px solid var(--md-outline-variant);
+    overflow-x: visible;
+  }
+  nav.app-nav .nav-item {
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 2px;
+    border-radius: var(--md-shape-sm);
+    font-size: 10.5px;
+    flex: 1;
+    min-width: 0;
+  }
+  nav.app-nav .nav-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+}
+
+/* ---------- Scroll to top ---------- */
+.scroll-top-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: var(--md-shape-full);
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+}
+.scroll-top-btn.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.scroll-top-btn:hover { background: color-mix(in srgb, var(--md-primary) 88%, black); }
+.scroll-top-btn .icon { width: 22px; height: 22px; }
+
+@media (max-width: 839px) {
+  .scroll-top-btn {
+    bottom: calc(64px + env(safe-area-inset-bottom) + 12px);
+  }
+}
+
+/* ---------- Typography ---------- */
+h1 { font-size: 26px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 17px; font-weight: 600; margin: 0 0 12px; color: var(--md-on-surface); }
+.subtitle { color: var(--md-on-surface-variant); margin: 0 0 24px; font-size: 14px; }
+
+@media (max-width: 600px) {
+  h1 { font-size: 22px; }
+}
+
+/* ---------- Layout helpers ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 760px) {
+  .two-col { grid-template-columns: 1fr; }
+}
+
+.three-col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .three-col { grid-template-columns: 1fr; }
+}
+
+/* ---------- Cards ---------- */
+.stat-card {
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-md);
+  padding: 16px;
+}
+
+/* Color-coded stat-card variants, shared between Dashboard (current/previous period) and Stats
+   (grand total / primary vs supplementary activity groups) so both pages read the same palette. */
+.stat-card-blue { background: var(--md-secondary-container); }
+.stat-card-blue .label, .stat-card-blue .value, .stat-card-blue .subtitle { color: var(--md-on-secondary-container); }
+.stat-card-yellow { background: var(--md-yellow-container); }
+.stat-card-yellow .label, .stat-card-yellow .value, .stat-card-yellow .subtitle { color: var(--md-on-yellow-container); }
+.stat-card-purple { background: var(--md-purple-container); }
+.stat-card-purple .label, .stat-card-purple .value, .stat-card-purple .subtitle { color: var(--md-on-purple-container); }
+
+.stat-card .label {
+  font-size: 12px;
+  color: var(--md-on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+.stat-card .value {
+  font-size: 24px;
+  font-weight: 700;
+  margin-top: 4px;
+  color: var(--md-on-surface);
+}
+
+.card {
+  background: var(--md-surface-container-low);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-lg);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 600px) {
+  .card { padding: 14px; border-radius: var(--md-shape-md); }
+}
+
+/* Fixed-height wrapper around every Chart.js <canvas> (paired with maintainAspectRatio: false)
+ * so charts keep room for multi-row legends on narrow viewports - shared by Dashboard, Stats and
+ * Performance. */
+.chart-box {
+  position: relative;
+  height: 240px;
+}
+.chart-box-lg {
+  height: 340px;
+}
+.chart-box-xl {
+  height: 380px;
+}
+
+/* ---------- Chart heading + help toggle (see ChartHeading.astro) ---------- */
+.chart-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chart-help-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--md-shape-full);
+  border: 1px solid var(--md-outline-variant);
+  background: var(--md-surface-container);
+  color: var(--md-on-surface-variant);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.chart-help-btn:hover,
+.chart-help-btn[aria-expanded='true'] {
+  background: var(--md-primary-container);
+  border-color: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+.chart-help-panel {
+  margin: 0 0 12px;
+}
+
+/* ---------- Table ---------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th, td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+th { color: var(--md-on-surface-variant); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
+
+tr:hover td { background: var(--md-surface-container-high); }
+
+/* ---------- Badges & chips ---------- */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--md-shape-full);
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.filters button {
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-outline-variant);
+  color: var(--md-on-surface-variant);
+  padding: 8px 16px;
+  border-radius: var(--md-shape-full);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.filters button.active {
+  background: var(--md-primary-container);
+  border-color: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
+/* ---------- Progress bar ---------- */
+.progress-bar {
+  height: 8px;
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container-highest);
+  overflow: hidden;
+}
+
+.progress-bar > div {
+  height: 100%;
+  background: var(--md-primary);
+  border-radius: inherit;
+}
+
+/* ---------- Goal progress ring (donut with a centered %) ---------- */
+.ring-wrap {
+  position: relative;
+  width: var(--ring-size, 56px);
+  height: var(--ring-size, 56px);
+  flex-shrink: 0;
+}
+
+.ring-wrap svg { display: block; transform: rotate(-90deg); }
+
+.ring-track { stroke: var(--md-surface-container-highest); }
+
+.ring-fill {
+  stroke: var(--md-primary);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.ring-fill.done { stroke: var(--md-tertiary); }
+
+.ring-pct {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--ring-font-size, 12px);
+  font-weight: 600;
+  color: var(--md-on-surface);
+}
+
+.goal-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.goal-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 88px;
+}
+
+.goal-tile-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.goal-tile-sub {
+  font-size: 12px;
+  color: var(--md-on-surface-variant);
+}
+
+/* ---------- Form controls ---------- */
+select, input[type='number'], input[type='text'] {
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--md-on-surface);
+  background: var(--md-surface-container-lowest);
+  border: 1px solid var(--md-outline);
+  border-radius: var(--md-shape-xs);
+  padding: 8px 10px;
+  min-height: 36px;
+}
+
+select:focus, input:focus {
+  outline: 2px solid var(--md-primary);
+  outline-offset: -1px;
+  border-color: var(--md-primary);
+}
+
+button {
+  font-family: inherit;
+}
+
+/* generic pagination-style buttons (Trước/Sau etc.) */
+#prev-page, #next-page {
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-outline-variant);
+  color: var(--md-on-surface);
+  padding: 8px 16px;
+  border-radius: var(--md-shape-full);
+  font-size: 14px;
+  cursor: pointer;
+  min-height: 40px;
+}
+#prev-page:disabled, #next-page:disabled { opacity: 0.5; cursor: default; }
+#prev-page:not(:disabled):hover, #next-page:not(:disabled):hover {
+  background: var(--md-surface-container-high);
+}
+
+canvas { max-width: 100%; }
+
+.empty-state {
+  color: var(--md-on-surface-variant);
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 0;
+}

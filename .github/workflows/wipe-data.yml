@@ -1,0 +1,79 @@
+name: Wipe data (reset for a fresh rebuild)
+
+# Deletes ALL generated activity data - public/data/*.json, public/data/streams/, the src/data/
+# symlinks pointing at them, and retained-raw/ - then pushes straight to main. Use this before
+# regenerating history from scratch (e.g. a brand-new Strava export via "Build from downloaded
+# data", or to let the daily Strava API sync backfill everything again from an empty state).
+# Reproduces, as a repeatable action, the same one-off wipe commit 6e5625e did by hand on
+# 2026-07-12 - see CLAUDE.md gotcha #34 and scripts/etl/wipe-data.mjs.
+#
+# Manual trigger only, gated behind a typed confirmation input - this is destructive to the
+# working tree (the only way back is `git revert`/history, no script in this repo restores wiped
+# data) and must never fire by accident or on a schedule.
+#
+# Consequence worth knowing: after this pushes, data.mjs's build-time `import` of the now-missing
+# src/data JSON files will fail, so the *next* build of main (including Cloudflare Pages' own
+# auto-deploy build) will fail until a sync/build workflow repopulates data. That's expected and
+# harmless - Cloudflare Pages keeps serving the last successful deployment; nothing goes offline.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type WIPE to confirm - deletes all activity/gear/records/routes/streams data and retained-raw/"
+        required: true
+
+permissions:
+  contents: write
+
+# Shares a concurrency group with strava-api-sync.yml and build-from-download.yml: all three write
+# to the same public/data files and push straight to main, so they must never run at the same time.
+concurrency:
+  group: strava-api-sync
+  cancel-in-progress: false
+
+jobs:
+  wipe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check confirmation input
+        env:
+          CONFIRM_INPUT: ${{ github.event.inputs.confirm }}
+        run: |
+          if [ "$CONFIRM_INPUT" != "WIPE" ]; then
+            echo "::error::Input 'confirm' must be exactly 'WIPE' to proceed (got '$CONFIRM_INPUT')." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Wipe generated data + retained-raw
+        run: node scripts/etl/wipe-data.mjs
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to wipe - data was already empty."
+            exit 0
+          fi
+          git commit -m "chore: wipe generated data for a fresh rebuild"
+          for attempt in 1 2 3 4; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Push failed (attempt $attempt), rebasing onto latest main and retrying..."
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 5))
+          done
+          echo "Push failed after retries" >&2
+          exit 1

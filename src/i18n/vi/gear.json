@@ -1,0 +1,22 @@
+{
+  "title": "Trang bị",
+  "subtitle": "Số km tích lũy theo từng đôi giày / xe đạp, tính từ dữ liệu gắn gear trên mỗi hoạt động.",
+  "shoesHeading": "Giày chạy",
+  "bikesHeading": "Xe đạp",
+  "shoeCol": "Giày",
+  "bikeCol": "Xe",
+  "sessionsCol": "Số buổi",
+  "totalDistanceCol": "Tổng km",
+  "totalTimeCol": "Tổng thời gian",
+  "statusCol": "Tình trạng",
+  "componentsCol": "Linh kiện",
+  "retired": "Đã nghỉ hưu",
+  "noLimit": "Không giới hạn",
+  "replaceAtPrefix": "Nên thay (",
+  "replaceAtSuffix": "+)",
+  "kind": {
+    "shoe": "Giày",
+    "sandal": "Sandal",
+    "barefoot": "Chân đất"
+  }
+}

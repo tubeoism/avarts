@@ -1,0 +1,7 @@
+{
+  "hour": "hr",
+  "session": "session",
+  "cadenceRpm": "rpm",
+  "cadenceStrokes": "strokes/min",
+  "cadenceSteps": "steps/min"
+}

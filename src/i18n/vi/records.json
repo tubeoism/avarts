@@ -1,0 +1,5 @@
+{
+  "title": "Kỷ lục cá nhân",
+  "subtitle": "Thành tích tốt nhất trên từng cự ly, tính từ dữ liệu GPS của các hoạt động ngoài trời.",
+  "emptyState": "Chưa có đủ dữ liệu GPS để tính kỷ lục cá nhân cho {type}."
+}

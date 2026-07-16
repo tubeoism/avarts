@@ -1,0 +1,23 @@
+{
+  "title": "Phân tích hiệu suất",
+  "subtitle": "Xu hướng thể lực dài hạn, hiệu suất theo tháng và tương quan giữa các chỉ số trung bình.",
+  "fitnessAdvancedCaption": "Diễn biến tải tập luyện theo thời gian. CTL (Fitness) là trung bình tải 42 ngày, phản ánh nền tảng thể lực; ATL (Fatigue) là trung bình tải 7 ngày, phản ánh mức mệt mỏi ngắn hạn; TSB (Form) = CTL − ATL, vẽ trên trục phải. Nền sọc xanh lá (TSB −20 → −5): {zoneOptimal}; nền sọc xanh dương (TSB −5 → 10): {zoneRecovery}.",
+  "runTrendHeading": "Hiệu suất theo tháng (Run)",
+  "rideTrendHeading": "Hiệu suất theo tháng (Ride)",
+  "runComboCaption": "Mỗi cột là cự ly trung bình một buổi chạy trong tháng (km, trục trái). Các đường thể hiện pace, nhịp tim, cadence, running power và độ cao leo trung bình mỗi buổi; một số trục được ẩn để biểu đồ gọn hơn — di chuột lên biểu đồ để xem giá trị chính xác. Bấm tên chỉ số trong chú giải để ẩn/hiện.",
+  "rideComboCaption": "Mỗi cột là cự ly trung bình một buổi đạp trong tháng (km, trục trái). Các đường thể hiện công suất, tốc độ, nhịp tim, cadence và độ cao leo trung bình mỗi buổi; một số trục được ẩn để biểu đồ gọn hơn — di chuột lên biểu đồ để xem giá trị chính xác. Bấm tên chỉ số trong chú giải để ẩn/hiện.",
+  "correlationHeading": "Tương quan chỉ số",
+  "xAxisLabel": "Trục X",
+  "yAxisLabel": "Trục Y",
+  "correlationCaption": "Mỗi điểm là một hoạt động, tô màu theo năm. Chọn hai chỉ số cho trục X và trục Y để khảo sát mối quan hệ giữa chúng — ví dụ pace và nhịp tim, hoặc cadence và công suất.",
+  "bestEffortHeading": "Best effort theo năm",
+  "bestEffortCaptionPrefix": "Thời gian tốt nhất mỗi năm trên từng cự ly, xác định bằng cửa sổ trượt trên dữ liệu GPS gốc — cùng phương pháp với trang ",
+  "bestEffortCaptionSuffix": ". Hoạt động không có dữ liệu GPS hợp lệ không được đưa vào phép tính.",
+  "avgDistancePerSessionLabel": "Cự ly bình quân/buổi ({unit})",
+  "perSessionUnit": "{unit}/buổi",
+  "avgElevationLabel": "Độ cao leo TB (m)",
+  "runningPowerLabel": "Running power (W)",
+  "paceRawLabel": "Pace (phút/{unit})",
+  "speedRawLabel": "Tốc độ ({unit})",
+  "cadenceLabel": "Cadence ({unit})"
+}

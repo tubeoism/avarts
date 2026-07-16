@@ -1,0 +1,9 @@
+{
+  "distance": "Distance",
+  "avgHeartRate": "Avg Heart Rate (bpm)",
+  "avgWatts": "Avg Power (W)",
+  "avgCadence": "Avg Cadence",
+  "elevationGain": "Elevation Gain (m)",
+  "pace": "Avg Pace",
+  "speed": "Avg Speed"
+}

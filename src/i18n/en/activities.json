@@ -1,0 +1,19 @@
+{
+  "title": "Activity Log",
+  "subtitleCount": "{count} activities",
+  "paceOrSpeedCol": "Pace/Speed",
+  "avgHrCol": "Avg HR",
+  "maxHrCol": "Max HR",
+  "elevationCol": "Elevation",
+  "relEffortCol": "Rel. Effort",
+  "allYears": "All Years",
+  "allMonths": "All Months",
+  "monthAbbr": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+  "searchPlaceholder": "Search name...",
+  "emptyState": "No activities match the filters.",
+  "prevPage": "← Prev",
+  "nextPage": "Next →",
+  "showLabel": "Show",
+  "rowsPerPage": "rows/page",
+  "pageLabel": "Page {page}/{totalPages} ({count} activities)"
+}

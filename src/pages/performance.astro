@@ -1,0 +1,641 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { loadActivities } from '../lib/data.mjs';
+import { monthlyBuckets, heatmapActivityPoints } from '../lib/stats.mjs';
+import { toVnDate } from '../lib/format.js';
+import bestEfforts from '../data/best-efforts.json';
+import { t, DEFAULT_LANG } from '../lib/i18n.js';
+import T from '../components/T.astro';
+import ChartHeading from '../components/ChartHeading.astro';
+
+const activities = loadActivities();
+const runs = activities.filter((a) => a.type === 'Run');
+const rides = activities.filter((a) => a.type === 'Ride');
+
+const runMonthly = monthlyBuckets(runs);
+const rideMonthly = monthlyBuckets(rides);
+const runMonthlyYears = [...new Set(runMonthly.map((m) => m.month.slice(0, 4)))].sort((a, b) => b.localeCompare(a));
+const rideMonthlyYears = [...new Set(rideMonthly.map((m) => m.month.slice(0, 4)))].sort((a, b) => b.localeCompare(a));
+
+const runHeatmapPoints = heatmapActivityPoints(activities, 'Run');
+const rideHeatmapPoints = heatmapActivityPoints(activities, 'Ride');
+// Every calendar year with at least one activity, oldest first - same shared year->palette-slot
+// basis used on /stats (see its own allYears comment), computed identically here so a given year
+// is the same categorical color on both pages even though nothing is shared at runtime - just two
+// deterministic seriesVisual(index, mode) calls fed the same index for the same year.
+const allYears = [...new Set(activities.map((a) => toVnDate(a.date).getUTCFullYear()))].sort((a, b) => a - b);
+---
+<Layout titleKey="nav.performance">
+  <h1><T key="performance.title" /></h1>
+  <p class="subtitle"><T key="performance.subtitle" /></p>
+
+  <div class="card" id="fitness-advanced">
+    <ChartHeading titleKey="dashboard.fitnessHeading"><T key="performance.fitnessAdvancedCaption" vars={(lang) => ({ zoneOptimal: t(lang, 'chart.tsbZoneOptimal'), zoneRecovery: t(lang, 'chart.tsbZoneRecovery') })} /></ChartHeading>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <label class="subtitle" style="margin:0" for="fitness-range-select"><T key="common.timeRange" /></label>
+      <select id="fitness-range-select">
+        <option value="all" data-i18n="common.all">{t(DEFAULT_LANG, 'common.all')}</option>
+        <option value="last3m" data-i18n="common.lastNMonths" data-i18n-vars={JSON.stringify({ n: 3 })}>{t(DEFAULT_LANG, 'common.lastNMonths', { n: 3 })}</option>
+        <option value="last6m" data-i18n="common.lastNMonths" data-i18n-vars={JSON.stringify({ n: 6 })}>{t(DEFAULT_LANG, 'common.lastNMonths', { n: 6 })}</option>
+        <option value="last1y" selected data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 1 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 1 })}</option>
+      </select>
+    </div>
+    <div class="chart-box chart-box-xl">
+      <canvas id="fitness-advanced-chart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="performance.runTrendHeading"><T key="performance.runComboCaption" /></ChartHeading>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <label class="subtitle" style="margin:0" for="run-combo-range-select"><T key="common.timeRange" /></label>
+      <select id="run-combo-range-select" data-series={JSON.stringify(runMonthly)}>
+        <option value="all" data-i18n="common.all">{t(DEFAULT_LANG, 'common.all')}</option>
+        <option value="last1" data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 1 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 1 })}</option>
+        <option value="last2" selected data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 2 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 2 })}</option>
+        {runMonthlyYears.map((y) => (
+          <option value={y}>{y}</option>
+        ))}
+      </select>
+    </div>
+    <div class="chart-box chart-box-xl">
+      <canvas id="run-combo-chart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="performance.rideTrendHeading"><T key="performance.rideComboCaption" /></ChartHeading>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <label class="subtitle" style="margin:0" for="ride-combo-range-select"><T key="common.timeRange" /></label>
+      <select id="ride-combo-range-select" data-series={JSON.stringify(rideMonthly)}>
+        <option value="all" data-i18n="common.all">{t(DEFAULT_LANG, 'common.all')}</option>
+        <option value="last1" data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 1 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 1 })}</option>
+        <option value="last2" selected data-i18n="common.lastNYears" data-i18n-vars={JSON.stringify({ n: 2 })}>{t(DEFAULT_LANG, 'common.lastNYears', { n: 2 })}</option>
+        {rideMonthlyYears.map((y) => (
+          <option value={y}>{y}</option>
+        ))}
+      </select>
+    </div>
+    <div class="chart-box chart-box-xl">
+      <canvas id="ride-combo-chart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="performance.correlationHeading"><T key="performance.correlationCaption" /></ChartHeading>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <div class="filters" data-toggle="correlation-type">
+        <button type="button" data-value="Run" class="active"><T key="activityType.Run" /></button>
+        <button type="button" data-value="Ride"><T key="activityType.Ride" /></button>
+      </div>
+      <label class="subtitle" style="margin:0" for="correlation-x-select"><T key="performance.xAxisLabel" /></label>
+      <select id="correlation-x-select"></select>
+      <label class="subtitle" style="margin:0" for="correlation-y-select"><T key="performance.yAxisLabel" /></label>
+      <select id="correlation-y-select"></select>
+    </div>
+    <div class="chart-box chart-box-lg">
+      <canvas id="correlation-scatter"
+        data-run={JSON.stringify(runHeatmapPoints)}
+        data-ride={JSON.stringify(rideHeatmapPoints)}
+        data-years={JSON.stringify(allYears)}></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <ChartHeading titleKey="performance.bestEffortHeading"><T key="performance.bestEffortCaptionPrefix" /><a href="/records"><T key="nav.records" /></a><T key="performance.bestEffortCaptionSuffix" /></ChartHeading>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <div class="filters" data-toggle="best-effort-type">
+        <button type="button" data-value="Run" class="active"><T key="activityType.Run" /></button>
+        <button type="button" data-value="Ride"><T key="activityType.Ride" /></button>
+      </div>
+    </div>
+    <div class="chart-box chart-box-lg">
+      <canvas id="best-effort-chart" data-series={JSON.stringify(bestEfforts)}></canvas>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  import Chart from 'chart.js/auto';
+  import { onThemeChange, themeColors, currentTheme } from '../lib/theme.js';
+  import { toVnDate, formatDate, formatDuration, KM_PER_MILE } from '../lib/format.js';
+  import { currentUnitSystem } from '../lib/units.js';
+  import { tsbZonesPlugin, TSB_ZONES, seriesVisual, readCanvas, dataOf, yearIndexOf, fmtInt, fmtPace, identity } from '../lib/charts.js';
+  import { t } from '../lib/i18n.js';
+  import { currentLang } from '../lib/lang.js';
+
+  function hexToRgbArr(hex) {
+    const n = parseInt(hex.replace('#', ''), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  /** t=0 -> hexA, t=1 -> hexB. Used to build an ordinal (light->dark) ramp off a single brand
+   * hue, anchored to the live surface color so it fades correctly in both themes. */
+  function mixHex(hexA, hexB, t) {
+    const a = hexToRgbArr(hexA);
+    const b = hexToRgbArr(hexB);
+    const c = a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    return `rgb(${c.join(', ')})`;
+  }
+
+  // Run/Ride monthly performance combo charts: one bar (avg distance per session) plus up to 5
+  // line metrics, all sharing one canvas via hidden y-axes (only the bar's axis is rendered;
+  // exact values come from the shared index tooltip). `order` forces every line to paint AFTER
+  // (on top of) the bar, which otherwise visually buried whatever line passed through its filled
+  // column at that month.
+  //
+  // Each line is placed via exactly one of:
+  //   - `band: [bottomFrac, topFrac]` (0 = chart bottom, 1 = chart top): a dedicated axis fit
+  //     tightly to that line's OWN min/max within that vertical slice (see bandRange()) - used
+  //     for lines that just need to be decluttered into their own territory (pace, elevation).
+  //     `zeroBased: true` additionally forces the line's own 0 (not its real data min) to the
+  //     bottom of its band, so e.g. elevation's "0 climb" lines up with the chart's true origin.
+  //   - `shareBarAxis: true`: the line reuses the bar's own axis verbatim (no dedicated band) -
+  //     e.g. Ride's speed, so a speed of 25 km/h sits exactly where a distance of 25 km would,
+  //     reading on equal footing with the column instead of independently stretched to fill space.
+  //   - `group: 'name'` + a matching entry in `config.groupBands`: several lines share ONE axis
+  //     fit to their COMBINED min/max, so their relative vertical order reflects real magnitude
+  //     (HR 130 sits below cadence 180 sits below power 240) rather than each auto-stretching to
+  //     fill its slice independently and losing that ordering.
+  //
+  // The M3 theme only exposes 3 named series colors (primary/secondary/tertiary), so the 2
+  // "secondary" lines (cadence, elevation) reuse the pace/HR hues but MIXED toward the surface
+  // color (mixHex, defined above) rather than just dashed - a dash pattern alone doesn't survive
+  // into the legend swatch (Chart.js draws a solid filled box there, not a dash preview), so two
+  // lines sharing one hue would otherwise be indistinguishable in the legend.
+  function monthlyMetricComboChart(selectId, canvasId, config) {
+    const select = document.getElementById(selectId);
+    const canvas = readCanvas(canvasId);
+    if (!select || !canvas) return;
+    const allSeries = dataOf(select, 'series'); // monthlyBuckets() output, ascending by month
+
+    // Shifts a 'YYYY-MM' string by `delta` months (negative = back in time).
+    function shiftMonth(monthStr, delta) {
+      const [y, m] = monthStr.split('-').map(Number);
+      const idx = y * 12 + (m - 1) + delta;
+      const shiftedYear = Math.floor(idx / 12);
+      const shiftedMonth = (idx % 12) + 1;
+      return `${shiftedYear}-${String(shiftedMonth).padStart(2, '0')}`;
+    }
+
+    const seriesForMode = (mode) => {
+      if (mode === 'all') return allSeries;
+      if (mode === 'last1' || mode === 'last2') {
+        // Rolling N*12-month window ending at the latest month with data - not "the last N
+        // distinct calendar years" - so "1 năm gần nhất" as of 2026-07 starts at 2025-08, not
+        // at 2026-01.
+        const n = mode === 'last1' ? 1 : 2;
+        const latest = allSeries[allSeries.length - 1]?.month;
+        if (!latest) return allSeries;
+        const cutoff = shiftMonth(latest, -(12 * n - 1));
+        return allSeries.filter((m) => m.month >= cutoff);
+      }
+      return allSeries.filter((m) => m.month.slice(0, 4) === mode);
+    };
+
+    function extent(values) {
+      const nums = values.filter((v) => v != null);
+      return nums.length ? [Math.min(...nums), Math.max(...nums)] : null;
+    }
+
+    // padLow:false pins loRaw exactly at the bandBottom fraction with no headroom below it -
+    // used for zero-based axes so their 0 lands exactly on the chart's origin, not a few % above
+    // it the way the normal padded fit would place it.
+    function bandRange(loRaw, hiRaw, [bandBottom, bandTop], padLow = true) {
+      let span = hiRaw - loRaw;
+      if (!(span > 0)) span = Math.max(Math.abs(hiRaw), 1);
+      const pad = span * 0.08;
+      const lo = padLow ? loRaw - pad : loRaw;
+      const hi = hiRaw + pad;
+      const axisSpan = (hi - lo) / (bandTop - bandBottom);
+      const min = lo - bandBottom * axisSpan;
+      return { min, max: min + axisSpan };
+    }
+
+    let chart;
+    function render(c) {
+      const system = currentUnitSystem();
+      const lang = currentLang();
+      const distFactor = system === 'imperial' ? 1 / KM_PER_MILE : 1;
+      const series = seriesForMode(select.value);
+      chart?.destroy();
+
+      const barValues = series.map((m) => (m.count ? Math.round((m.km / m.count) * distFactor * 100) / 100 : null));
+      const barMax = extent(barValues)?.[1] ?? 0;
+      const lineValues = config.lines.map((line) => series.map((m) => {
+        let v = line.value(m);
+        if (v == null) return null;
+        if (line.unit === 'pace' && system === 'imperial') v *= KM_PER_MILE;
+        if (line.unit === 'speed' && system === 'imperial') v /= KM_PER_MILE;
+        return Math.round(v * 100) / 100;
+      }));
+
+      const axisIds = config.lines.map((line, i) => (
+        line.shareBarAxis ? 'y' : line.group ? `yGroup_${line.group}` : `yLine${i}`
+      ));
+
+      // One bandRange per DISTINCT non-bar axis: individual lines get their own tight fit, but
+      // lines sharing a `group` all resolve to the same axis id and get ONE fit computed from
+      // their combined values, so they stay proportionate to each other.
+      const axisRanges = {};
+      config.lines.forEach((line, i) => {
+        if (line.shareBarAxis || line.group || !line.band) return;
+        const ext = extent(lineValues[i]);
+        if (ext) axisRanges[axisIds[i]] = bandRange(line.zeroBased ? 0 : ext[0], ext[1], line.band, !line.zeroBased);
+      });
+      for (const group of new Set(config.lines.filter((l) => l.group).map((l) => l.group))) {
+        const idxs = config.lines.map((l, i) => (l.group === group ? i : -1)).filter((i) => i >= 0);
+        const ext = extent(idxs.flatMap((i) => lineValues[i]));
+        if (ext) axisRanges[`yGroup_${group}`] = bandRange(ext[0], ext[1], config.groupBands[group]);
+      }
+
+      chart = new Chart(canvas, {
+        data: {
+          labels: series.map((m) => m.month),
+          datasets: [
+            {
+              type: 'bar',
+              label: typeof config.barLabel === 'function' ? config.barLabel(system, lang) : config.barLabel,
+              data: barValues,
+              backgroundColor: c.outlineVariant,
+              borderRadius: 4,
+              maxBarThickness: 18,
+              yAxisID: 'y',
+              order: 2,
+            },
+            ...config.lines.map((line, i) => ({
+              type: 'line',
+              label: typeof line.label === 'function' ? line.label(system, lang) : line.label,
+              data: lineValues[i],
+              borderColor: line.color(c),
+              backgroundColor: line.color(c),
+              borderDash: line.dashed ? [5, 4] : undefined,
+              yAxisID: axisIds[i],
+              pointRadius: 0,
+              borderWidth: 2,
+              spanGaps: true,
+              order: 1,
+            })),
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'bottom', labels: { color: c.onSurface, boxWidth: 12 } },
+          },
+          scales: {
+            x: { ticks: { color: c.onSurfaceVariant, maxRotation: 0, autoSkip: true, maxTicksLimit: 24 }, grid: { display: false } },
+            y: {
+              position: 'left',
+              // padLow:false - a bar's 0 always belongs exactly at its band's bottom (the chart's
+              // true origin), never nudged up by the usual headroom padding.
+              ...bandRange(0, barMax, config.barBand || [0, 1], false),
+              title: { display: true, text: typeof config.barAxisLabel === 'function' ? config.barAxisLabel(system, lang) : config.barAxisLabel, color: c.onSurfaceVariant },
+              ticks: { color: c.onSurfaceVariant },
+              grid: { color: c.outlineVariant },
+            },
+            ...Object.fromEntries(Object.entries(axisRanges).map(([id, range]) => [
+              id,
+              { display: false, position: 'right', ...range },
+            ])),
+          },
+        },
+      });
+    }
+    onThemeChange(render);
+    select.addEventListener('change', () => render(themeColors()));
+    document.addEventListener('unitschange', () => render(themeColors()));
+    document.addEventListener('langchange', () => render(themeColors()));
+  }
+
+  monthlyMetricComboChart('run-combo-range-select', 'run-combo-chart', {
+    barLabel: (u, lang) => t(lang, 'performance.avgDistancePerSessionLabel', { unit: u === 'imperial' ? 'mi' : 'km' }),
+    barAxisLabel: (u, lang) => t(lang, 'performance.perSessionUnit', { unit: u === 'imperial' ? 'mi' : 'km' }),
+    barBand: [0, 0.5],
+    groupBands: { effort: [0.35, 1] },
+    lines: [
+      { label: (u, lang) => t(lang, 'stats.metricPaceLabel', { unit: u === 'imperial' ? 'mi' : 'km' }), value: (m) => m.avgPace, unit: 'pace', color: (c) => c.primary, band: [0, 0.3] },
+      { label: (u, lang) => t(lang, 'chartMetric.avgHeartRate'), value: (m) => m.avgHeartRate, color: (c) => c.secondary, group: 'effort' },
+      { label: (u, lang) => t(lang, 'performance.runningPowerLabel'), value: (m) => m.avgWatts, color: (c) => c.tertiary, group: 'effort' },
+      { label: (u, lang) => t(lang, 'stats.metricCadenceLabel', { unit: t(lang, 'unit.cadenceSteps') }), value: (m) => m.avgCadence, color: (c) => mixHex(c.surface, c.primary, 0.55), dashed: true, group: 'effort' },
+      { label: (u, lang) => t(lang, 'performance.avgElevationLabel'), value: (m) => (m.count ? m.elevationGain / m.count : null), color: (c) => mixHex(c.surface, c.secondary, 0.55), dashed: true, band: [0, 1], zeroBased: true },
+    ],
+  });
+
+  monthlyMetricComboChart('ride-combo-range-select', 'ride-combo-chart', {
+    barLabel: (u, lang) => t(lang, 'performance.avgDistancePerSessionLabel', { unit: u === 'imperial' ? 'mi' : 'km' }),
+    barAxisLabel: (u, lang) => t(lang, 'performance.perSessionUnit', { unit: u === 'imperial' ? 'mi' : 'km' }),
+    barBand: [0, 0.5],
+    groupBands: { effort: [0.52, 1] },
+    lines: [
+      { label: (u, lang) => t(lang, 'chartMetric.avgWatts'), value: (m) => m.avgWatts, color: (c) => c.primary, group: 'effort' },
+      { label: (u, lang) => t(lang, 'stats.metricSpeedLabel', { unit: u === 'imperial' ? 'mph' : 'km/h' }), value: (m) => m.avgSpeedKmh, unit: 'speed', color: (c) => c.secondary, shareBarAxis: true },
+      { label: (u, lang) => t(lang, 'chartMetric.avgHeartRate'), value: (m) => m.avgHeartRate, color: (c) => c.tertiary, group: 'effort' },
+      { label: (u, lang) => t(lang, 'stats.metricCadenceLabel', { unit: t(lang, 'unit.cadenceRpm') }), value: (m) => m.avgCadence, color: (c) => mixHex(c.surface, c.primary, 0.55), dashed: true, group: 'effort' },
+      { label: (u, lang) => t(lang, 'performance.avgElevationLabel'), value: (m) => (m.count ? m.elevationGain / m.count : null), color: (c) => mixHex(c.surface, c.secondary, 0.55), dashed: true, band: [0, 1], zeroBased: true },
+    ],
+  });
+
+  // Metric-vs-metric correlation scatter (Run/Ride): configurable X/Y picker over per-activity
+  // fields (Pace/Speed, HR, Power, Cadence, Elevation) - lets you check e.g. cardiac drift
+  // (pace vs HR) or cadence-vs-power just by swapping the two selects, for either activity type.
+  // Same per-year dataset + seriesVisual() categorical color technique as the habit-scatter and
+  // metric-vs-time heatmap charts on /stats, via the shared yearIndex (see yearIndexOf above).
+  {
+    const canvas = readCanvas('correlation-scatter');
+    const typeGroup = document.querySelector('[data-toggle="correlation-type"]');
+    const xSelect = document.getElementById('correlation-x-select');
+    const ySelect = document.getElementById('correlation-y-select');
+    if (canvas && typeGroup && xSelect && ySelect) {
+      const pointsByType = { Run: dataOf(canvas, 'run'), Ride: dataOf(canvas, 'ride') };
+      const yearIndex = yearIndexOf(canvas);
+
+      // Same metric set as /stats's metric-vs-time heatmap METRICS, minus distance - distance
+      // isn't one of the correlation axes the feature asked for (Pace/Speed, HR, Power, Cadence,
+      // Elevation).
+      const corrMetricsFor = (lang) => ({
+        Run: [
+          { key: 'paceMinPerKm', label: (u) => t(lang, 'performance.paceRawLabel', { unit: u === 'imperial' ? 'mi' : 'km' }), fmt: fmtPace, convert: (v, u) => (u === 'imperial' ? v * KM_PER_MILE : v) },
+          { key: 'avgHeartRate', label: t(lang, 'activityDetail.hrSeriesLabel'), fmt: fmtInt, convert: identity },
+          { key: 'avgWatts', label: t(lang, 'performance.runningPowerLabel'), fmt: fmtInt, convert: identity },
+          { key: 'avgCadence', label: t(lang, 'performance.cadenceLabel', { unit: t(lang, 'unit.cadenceSteps') }), fmt: fmtInt, convert: identity },
+          { key: 'elevationGain', label: t(lang, 'chartMetric.elevationGain'), fmt: fmtInt, convert: identity },
+        ],
+        Ride: [
+          { key: 'speedKmh', label: (u) => t(lang, 'performance.speedRawLabel', { unit: u === 'imperial' ? 'mph' : 'km/h' }), fmt: fmtInt, convert: (v, u) => (u === 'imperial' ? v / KM_PER_MILE : v) },
+          { key: 'avgHeartRate', label: t(lang, 'activityDetail.hrSeriesLabel'), fmt: fmtInt, convert: identity },
+          { key: 'avgWatts', label: t(lang, 'activityDetail.powerSeriesLabel'), fmt: fmtInt, convert: identity },
+          { key: 'avgCadence', label: t(lang, 'performance.cadenceLabel', { unit: t(lang, 'unit.cadenceRpm') }), fmt: fmtInt, convert: identity },
+          { key: 'elevationGain', label: t(lang, 'chartMetric.elevationGain'), fmt: fmtInt, convert: identity },
+        ],
+      });
+
+      let activeType = 'Run';
+
+      // The metric picked in the OTHER select is disabled (not just skipped) in this select's
+      // option list, so a duplicate X=Y pick is impossible at the browser level rather than a
+      // rule enforced after the fact - the same technique as a "from/to" date-range picker
+      // disabling dates past the other bound.
+      function pickDefault(list, excludeKey, fallbackIndex) {
+        if (list[fallbackIndex].key !== excludeKey) return list[fallbackIndex].key;
+        return list.find((m) => m.key !== excludeKey).key;
+      }
+
+      function buildSelect(select, list, excludeKey, fallbackIndex) {
+        const system = currentUnitSystem();
+        const prevKey = select.value;
+        select.innerHTML = '';
+        for (const m of list) {
+          const opt = document.createElement('option');
+          opt.value = m.key;
+          opt.textContent = typeof m.label === 'function' ? m.label(system) : m.label;
+          opt.disabled = m.key === excludeKey;
+          select.appendChild(opt);
+        }
+        const keepPrev = prevKey !== excludeKey && list.some((m) => m.key === prevKey);
+        select.value = keepPrev ? prevKey : pickDefault(list, excludeKey, fallbackIndex);
+      }
+
+      // Rebuilds both selects' option lists for the active type, keeping each select's current
+      // choice if it still exists in the new list (e.g. "Nhịp tim" survives a Run<->Ride switch)
+      // and otherwise falling back to X=metric[0]/Y=metric[1] (Pace-or-Speed vs HR, the same
+      // default pairing the old fixed HR-vs-pace chart always showed) - unless that fallback IS
+      // the other axis's value, in which case pickDefault steps to the next metric instead.
+      // X is rebuilt against Y's PRE-rebuild value, then Y is rebuilt against X's just-picked
+      // value, so the final pair is always guaranteed distinct regardless of which axis changed.
+      function refreshAxisOptions() {
+        const list = corrMetricsFor(currentLang())[activeType];
+        buildSelect(xSelect, list, ySelect.value, 0);
+        buildSelect(ySelect, list, xSelect.value, 1);
+      }
+
+      let chart;
+      function render(c) {
+        const system = currentUnitSystem();
+        const list = corrMetricsFor(currentLang())[activeType];
+        const xMetric = list.find((m) => m.key === xSelect.value) || list[0];
+        const yMetric = list.find((m) => m.key === ySelect.value) || list[1];
+        const xLabel = typeof xMetric.label === 'function' ? xMetric.label(system) : xMetric.label;
+        const yLabel = typeof yMetric.label === 'function' ? yMetric.label(system) : yMetric.label;
+        const points = pointsByType[activeType].filter((p) => p[xMetric.key] != null && p[yMetric.key] != null);
+
+        chart?.destroy();
+        if (!points.length) return;
+
+        // One dataset per calendar year with a bold, mutually-distinct color (not a single-hue
+        // shading ramp) - same seriesVisual() categorical palette as the habit-scatter and
+        // metric-vs-time heatmap charts on /stats, indexed via the shared yearIndex so a given
+        // year is the same color in all three regardless of which page/metric filter is active.
+        const mode = currentTheme();
+        const yearsPresent = [...new Set(points.map((p) => toVnDate(p.date).getUTCFullYear()))].sort((a, b) => a - b);
+
+        chart = new Chart(canvas, {
+          type: 'scatter',
+          data: {
+            datasets: yearsPresent.map((year) => {
+              const { color, pointStyle } = seriesVisual(yearIndex.get(year), mode);
+              return {
+                label: String(year),
+                data: points
+                  .filter((p) => toVnDate(p.date).getUTCFullYear() === year)
+                  .map((p) => ({
+                    x: xMetric.convert(p[xMetric.key], system),
+                    y: yMetric.convert(p[yMetric.key], system),
+                    date: p.date,
+                  })),
+                backgroundColor: color,
+                pointStyle,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+              };
+            }),
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            plugins: {
+              legend: { position: 'right', labels: { color: c.onSurface, boxWidth: 12, usePointStyle: true } },
+              tooltip: {
+                callbacks: {
+                  title: (items) => (items[0] ? formatDate(items[0].raw.date) : ''),
+                  label: (ctx) => `${xLabel}: ${xMetric.fmt(ctx.raw.x)} · ${yLabel}: ${yMetric.fmt(ctx.raw.y)}`,
+                },
+              },
+            },
+            scales: {
+              x: { title: { display: true, text: xLabel, color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant, callback: (v) => xMetric.fmt(v) }, grid: { color: c.outlineVariant } },
+              y: { title: { display: true, text: yLabel, color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant, callback: (v) => yMetric.fmt(v) }, grid: { color: c.outlineVariant } },
+            },
+          },
+        });
+      }
+
+      refreshAxisOptions();
+      onThemeChange(render);
+      typeGroup.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (btn.classList.contains('active')) return;
+          typeGroup.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          activeType = btn.dataset.value;
+          refreshAxisOptions();
+          render(themeColors());
+        });
+      });
+      xSelect.addEventListener('change', () => { refreshAxisOptions(); render(themeColors()); });
+      ySelect.addEventListener('change', () => { refreshAxisOptions(); render(themeColors()); });
+      document.addEventListener('unitschange', () => { refreshAxisOptions(); render(themeColors()); });
+      document.addEventListener('langchange', () => { refreshAxisOptions(); render(themeColors()); });
+    }
+  }
+
+  // Best effort by year (Run/Ride toggle): one line per distance target, x = year, y = time.
+  // Colored via seriesVisual()/EXTRA_SERIES_COLORS - bold, mutually distinct hues kept clear of
+  // ACTIVITY_COLORS - rather than a single-hue ramp, per distance target (shortest -> longest).
+  // Run has 10 targets against a 7-color palette, so the last 3 reuse an earlier hue with a
+  // dashed line (seriesVisual's `dashed` flag) so they still read as their own series. Tooltip is
+  // index-mode (shared across all visible lines for the hovered year) since sparse per-year data
+  // (spanGaps) makes hovering a single thin line impractical - same pattern as the monthly combo
+  // charts above.
+  {
+    const canvas = readCanvas('best-effort-chart');
+    const toggle = document.querySelector('[data-toggle="best-effort-type"]');
+    if (canvas && toggle) {
+      const series = dataOf(canvas, 'series'); // { Run: [{key,label,meters,byYear:[{year,timeSec}]}], Ride: [...] }
+      let activeType = 'Run';
+
+      let chart;
+      function render(c) {
+        const targets = series[activeType] || [];
+        const allYears = [...new Set(targets.flatMap((t) => t.byYear.map((p) => p.year)))].sort((a, b) => a - b);
+        const mode = currentTheme();
+        // A dash pattern alone doesn't survive into the legend swatch (Chart.js draws a solid
+        // filled box there, not a dash preview - same issue noted on monthlyMetricComboChart's
+        // cadence/elevation lines above), so a reused hue is also mixed toward the surface color
+        // to look visibly different in the legend, not just in the dashed line itself.
+        const visuals = targets.map((target, i) => {
+          const v = seriesVisual(i, mode);
+          return { ...v, color: v.dashed ? mixHex(c.surface, v.color, 0.6) : v.color };
+        });
+
+        chart?.destroy();
+        if (!allYears.length) return;
+
+        chart = new Chart(canvas, {
+          type: 'line',
+          data: {
+            labels: allYears.map(String),
+            datasets: targets.map((target, i) => ({
+              label: target.label,
+              data: allYears.map((year) => target.byYear.find((p) => p.year === year)?.timeSec ?? null),
+              borderColor: visuals[i].color,
+              backgroundColor: visuals[i].color,
+              borderDash: visuals[i].dashed ? [5, 4] : undefined,
+              spanGaps: true,
+              pointRadius: 3,
+              pointHoverRadius: 5,
+              borderWidth: 2,
+            })),
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { position: 'bottom', labels: { color: c.onSurface, boxWidth: 12 } },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => (ctx.raw == null ? undefined : `${ctx.dataset.label}: ${formatDuration(ctx.raw)}`),
+                },
+              },
+            },
+            scales: {
+              x: { ticks: { color: c.onSurfaceVariant, maxRotation: 0 }, grid: { display: false } },
+              y: {
+                ticks: { color: c.onSurfaceVariant, callback: (v) => formatDuration(v) },
+                grid: { color: c.outlineVariant },
+              },
+            },
+          },
+        });
+      }
+
+      onThemeChange(render);
+      toggle.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (btn.classList.contains('active')) return;
+          toggle.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          activeType = btn.dataset.value;
+          render(themeColors());
+        });
+      });
+    }
+  }
+
+  // Fitness & Freshness (CTL/ATL/TSB): advanced counterpart to the Dashboard's 3-month chart -
+  // full history by default, with a <select> to zoom to the last 3/6/12 months or a single year.
+  // fitness.json isn't imported at build time (it's daily-granularity, large) so it's fetched
+  // client-side same as the Dashboard version; the year options are appended once the fetch
+  // resolves since the year list isn't known at server-render time here.
+  {
+    const canvas = readCanvas('fitness-advanced-chart');
+    const select = document.getElementById('fitness-range-select');
+    if (canvas && select) {
+      fetch('/data/fitness.json')
+        .then((r) => r.json())
+        .then((allSeries) => {
+          const years = [...new Set(allSeries.map((p) => p.date.slice(0, 4)))].sort((a, b) => b.localeCompare(a));
+          for (const year of years) {
+            const opt = document.createElement('option');
+            opt.value = year;
+            opt.textContent = year;
+            select.appendChild(opt);
+          }
+
+          const seriesForMode = (mode) => {
+            if (mode === 'all') return allSeries;
+            if (mode === 'last3m') return allSeries.slice(-90);
+            if (mode === 'last6m') return allSeries.slice(-180);
+            if (mode === 'last1y') return allSeries.slice(-365);
+            return allSeries.filter((p) => p.date.startsWith(mode));
+          };
+
+          let chart;
+          function render(c) {
+            const series = seriesForMode(select.value);
+            chart?.destroy();
+            chart = new Chart(canvas, {
+              type: 'line',
+              plugins: [tsbZonesPlugin(TSB_ZONES, { datasetIndex: 2 })],
+              data: {
+                labels: series.map((p) => p.date),
+                datasets: [
+                  { label: 'CTL (Fitness)', data: series.map((p) => p.ctl), borderColor: c.primary, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
+                  { label: 'ATL (Fatigue)', data: series.map((p) => p.atl), borderColor: c.secondary, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
+                  { label: 'TSB (Form)', data: series.map((p) => p.tsb), borderColor: c.tertiary, pointRadius: 0, borderWidth: 1, borderDash: [4, 3], yAxisID: 'y1' },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { labels: { color: c.onSurface } } },
+                scales: {
+                  x: { ticks: { color: c.onSurfaceVariant, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { display: false } },
+                  y: { position: 'left', title: { display: true, text: 'CTL / ATL', color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { color: c.outlineVariant } },
+                  y1: { position: 'right', title: { display: true, text: 'TSB', color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { display: false } },
+                },
+              },
+            });
+          }
+          onThemeChange(render);
+          select.addEventListener('change', () => render(themeColors()));
+        })
+        .catch((err) => console.error('Failed to load fitness.json', err));
+    }
+  }
+</script>

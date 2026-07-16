@@ -1,0 +1,19 @@
+{
+  "title": "Nhật ký hoạt động",
+  "subtitleCount": "{count} hoạt động",
+  "paceOrSpeedCol": "Pace/Tốc độ",
+  "avgHrCol": "HR TB",
+  "maxHrCol": "HR Max",
+  "elevationCol": "Độ cao",
+  "relEffortCol": "Rel. Effort",
+  "allYears": "Mọi năm",
+  "allMonths": "Mọi tháng",
+  "monthAbbr": ["Th.1", "Th.2", "Th.3", "Th.4", "Th.5", "Th.6", "Th.7", "Th.8", "Th.9", "Th.10", "Th.11", "Th.12"],
+  "searchPlaceholder": "Tìm tên...",
+  "emptyState": "Không có hoạt động nào phù hợp bộ lọc.",
+  "prevPage": "← Trước",
+  "nextPage": "Sau →",
+  "showLabel": "Hiển thị",
+  "rowsPerPage": "dòng/trang",
+  "pageLabel": "Trang {page}/{totalPages} ({count} hoạt động)"
+}

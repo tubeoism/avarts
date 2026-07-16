@@ -1,0 +1,5 @@
+{
+  "title": "Personal Records",
+  "subtitle": "Best performances over each distance, computed from the GPS data of outdoor activities.",
+  "emptyState": "Not enough GPS data yet to compute personal records for {type}."
+}

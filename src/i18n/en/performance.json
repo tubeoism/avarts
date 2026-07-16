@@ -1,0 +1,23 @@
+{
+  "title": "Performance Analysis",
+  "subtitle": "Long-term fitness trends, monthly performance, and correlations between average metrics.",
+  "fitnessAdvancedCaption": "Training-load trend over time. CTL (Fitness) is the 42-day average load, reflecting long-term conditioning; ATL (Fatigue) is the 7-day average load, reflecting short-term fatigue; TSB (Form) = CTL − ATL, plotted on the right axis. Green stripes (TSB −20 → −5): {zoneOptimal}; blue stripes (TSB −5 → 10): {zoneRecovery}.",
+  "runTrendHeading": "Monthly Performance (Run)",
+  "rideTrendHeading": "Monthly Performance (Ride)",
+  "runComboCaption": "Each bar is the average distance per run in that month (km, left axis). Lines show average pace, heart rate, cadence, running power, and elevation gain per session; some axes are hidden to keep the chart readable — hover the chart for exact values. Click a metric in the legend to show or hide it.",
+  "rideComboCaption": "Each bar is the average distance per ride in that month (km, left axis). Lines show average power, speed, heart rate, cadence, and elevation gain per session; some axes are hidden to keep the chart readable — hover the chart for exact values. Click a metric in the legend to show or hide it.",
+  "correlationHeading": "Metric Correlation",
+  "xAxisLabel": "X Axis",
+  "yAxisLabel": "Y Axis",
+  "correlationCaption": "Each point is one activity, colored by year. Choose two metrics for the X and Y axes to examine the relationship between them — for example pace and heart rate, or cadence and power.",
+  "bestEffortHeading": "Best Effort by Year",
+  "bestEffortCaptionPrefix": "Fastest time each year over each distance, determined with a sliding window over raw GPS data — the same method as the ",
+  "bestEffortCaptionSuffix": " page. Activities without valid GPS data are excluded from the calculation.",
+  "avgDistancePerSessionLabel": "Avg Distance/Session ({unit})",
+  "perSessionUnit": "{unit}/session",
+  "avgElevationLabel": "Avg Elevation Gain (m)",
+  "runningPowerLabel": "Running Power (W)",
+  "paceRawLabel": "Pace (min/{unit})",
+  "speedRawLabel": "Speed ({unit})",
+  "cadenceLabel": "Cadence ({unit})"
+}

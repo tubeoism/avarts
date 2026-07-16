@@ -1,0 +1,8 @@
+{
+  "title": "Training Calendar",
+  "subtitle": "Activity summary by year, month, and day. Each colored dot marks an activity type present in the period; the figures beside it are the period's total distance, time, and calories.",
+  "allYears": "All years",
+  "monthNames": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+  "dayActivitiesHeading": "Activities on {day}/{month}/{year}",
+  "restDay": "Rest"
+}

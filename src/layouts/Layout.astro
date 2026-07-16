@@ -1,0 +1,154 @@
+---
+import '../styles/global.css';
+import { t, DEFAULT_LANG } from '../lib/i18n.js';
+import { DEFAULT_UNIT_SYSTEM, DEFAULT_NIGHT_MODE } from '../lib/preferences.js';
+import T from '../components/T.astro';
+
+const { title, titleKey } = Astro.props;
+const pageTitle = titleKey ? t(DEFAULT_LANG, titleKey) : title;
+const path = new URL(Astro.request.url).pathname;
+
+const links = [
+  {
+    href: '/',
+    labelKey: 'nav.dashboard',
+    icon: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline>',
+  },
+  {
+    href: '/activities',
+    labelKey: 'nav.activities',
+    icon: '<line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>',
+  },
+  {
+    href: '/log',
+    labelKey: 'nav.log',
+    icon: '<circle cx="12" cy="12" r="3"></circle><circle cx="5" cy="6" r="2"></circle><circle cx="19" cy="6" r="2"></circle><circle cx="5" cy="18" r="2"></circle><line x1="9.5" y1="10" x2="6.5" y2="7.3"></line><line x1="14.5" y1="10" x2="17.5" y2="7.3"></line><line x1="9.5" y1="14" x2="6.5" y2="16.7"></line>',
+  },
+  {
+    href: '/calendar',
+    labelKey: 'nav.calendar',
+    icon: '<rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line>',
+  },
+  {
+    href: '/stats',
+    labelKey: 'nav.stats',
+    icon: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>',
+  },
+  {
+    href: '/performance',
+    labelKey: 'nav.performance',
+    icon: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline>',
+  },
+  {
+    href: '/routes',
+    labelKey: 'nav.routes',
+    icon: '<path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4z"></path><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line>',
+  },
+  {
+    href: '/records',
+    labelKey: 'nav.records',
+    icon: '<circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline>',
+  },
+  {
+    href: '/goals',
+    labelKey: 'nav.goals',
+    icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>',
+  },
+  {
+    href: '/gear',
+    labelKey: 'nav.gear',
+    icon: '<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path>',
+  },
+];
+---
+<!doctype html>
+<html lang={DEFAULT_LANG}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="any" />
+    <title data-i18n-page={titleKey}>{pageTitle} · Avarts Analytics</title>
+    <script define:vars={{ defaultLang: DEFAULT_LANG, defaultUnits: DEFAULT_UNIT_SYSTEM, defaultNightMode: DEFAULT_NIGHT_MODE }}>
+      (function () {
+        // Defaults come from src/config/preferences.json (see src/lib/preferences.js) - a value
+        // already persisted in localStorage (an explicit past toggle) always wins over it.
+        var VN_OFFSET_MS = 7 * 60 * 60 * 1000;
+        var vnHour = new Date(Date.now() + VN_OFFSET_MS).getUTCHours();
+        var autoDark = vnHour >= 19 || vnHour < 6;
+        var dark = defaultNightMode === 'dark' ? true : defaultNightMode === 'light' ? false : autoDark;
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        // Unit system IS persisted (unlike theme above) - there's no sensible "recompute from
+        // current time" default for km-vs-miles, so it has to survive across full page loads.
+        var savedUnits;
+        try { savedUnits = localStorage.getItem('unit-system'); } catch (e) {}
+        document.documentElement.dataset.units = (savedUnits === 'imperial' || savedUnits === 'metric') ? savedUnits : defaultUnits;
+        // Language IS persisted too, same reasoning as units above.
+        var savedLang;
+        try { savedLang = localStorage.getItem('lang'); } catch (e) {}
+        document.documentElement.dataset.lang = (savedLang === 'en' || savedLang === 'vi') ? savedLang : defaultLang;
+        document.documentElement.lang = document.documentElement.dataset.lang;
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="app-bar">
+      <span class="brand">🏃 Avarts Analytics</span>
+      <span class="app-bar-spacer"></span>
+      <button type="button" class="icon-btn units-toggle" id="units-toggle" data-i18n-aria-label="common.unitsToggleAriaLabel" aria-label={t(DEFAULT_LANG, 'common.unitsToggleAriaLabel')}>
+        <span class="unit-label unit-label-metric">KM</span>
+        <span class="unit-label unit-label-imperial">MI</span>
+      </button>
+      <button type="button" class="icon-btn lang-toggle" id="lang-toggle" data-i18n-aria-label="common.langToggleAriaLabel" aria-label={t(DEFAULT_LANG, 'common.langToggleAriaLabel')}>
+        <span class="lang-label lang-label-vi">VI</span>
+        <span class="lang-label lang-label-en">EN</span>
+      </button>
+      <button type="button" class="icon-btn theme-toggle" id="theme-toggle" data-i18n-aria-label="common.themeToggleAriaLabel" aria-label={t(DEFAULT_LANG, 'common.themeToggleAriaLabel')}>
+        <svg class="icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html="<circle cx='12' cy='12' r='5'></circle><line x1='12' y1='1' x2='12' y2='3'></line><line x1='12' y1='21' x2='12' y2='23'></line><line x1='4.22' y1='4.22' x2='5.64' y2='5.64'></line><line x1='18.36' y1='18.36' x2='19.78' y2='19.78'></line><line x1='1' y1='12' x2='3' y2='12'></line><line x1='21' y1='12' x2='23' y2='12'></line><line x1='4.22' y1='19.78' x2='5.64' y2='18.36'></line><line x1='18.36' y1='5.64' x2='19.78' y2='4.22'></line>" />
+        <svg class="icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html="<path d='M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'></path>" />
+      </button>
+    </header>
+    <nav class="app-nav">
+      {links.map((l) => (
+        <a href={l.href} class={`nav-item ${(l.href === '/' ? path === '/' : path.startsWith(l.href)) ? 'active' : ''}`}>
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={l.icon} />
+          <T key={l.labelKey} />
+        </a>
+      ))}
+    </nav>
+    <main class="layout">
+      <slot />
+    </main>
+    <button type="button" class="scroll-top-btn" id="scroll-top-btn" data-i18n-aria-label="common.scrollTopAriaLabel" aria-label={t(DEFAULT_LANG, 'common.scrollTopAriaLabel')}>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="19" x2="12" y2="5"></line>
+        <polyline points="5 12 12 5 19 12"></polyline>
+      </svg>
+    </button>
+    <script>
+      import { toggleTheme } from '../lib/theme.js';
+      import { toggleUnitSystem, onUnitsChange, repaintUnitNodes } from '../lib/units.js';
+      import { toggleLang, onLangChange } from '../lib/lang.js';
+      import { repaintLangNodes } from '../lib/i18n.js';
+      document.getElementById('theme-toggle')?.addEventListener('click', () => toggleTheme());
+      document.getElementById('units-toggle')?.addEventListener('click', () => toggleUnitSystem());
+      document.getElementById('lang-toggle')?.addEventListener('click', () => toggleLang());
+      onUnitsChange(repaintUnitNodes);
+      onLangChange(repaintLangNodes);
+
+      const scrollTopBtn = document.getElementById('scroll-top-btn');
+      if (scrollTopBtn) {
+        let ticking = false;
+        document.addEventListener('scroll', () => {
+          if (ticking) return;
+          ticking = true;
+          requestAnimationFrame(() => {
+            scrollTopBtn.classList.toggle('visible', window.scrollY > 400);
+            ticking = false;
+          });
+        }, { passive: true });
+        scrollTopBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+      }
+    </script>
+  </body>
+</html>

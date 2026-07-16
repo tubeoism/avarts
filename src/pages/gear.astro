@@ -1,0 +1,88 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { loadGear } from '../lib/data.mjs';
+import { formatDuration, formatDistance } from '../lib/format.js';
+import T from '../components/T.astro';
+
+const gear = loadGear();
+const shoes = gear.filter((g) => g.kind !== 'bike').sort((a, b) => b.totalDistanceKm - a.totalDistanceKm);
+const bikes = gear.filter((g) => g.kind === 'bike').sort((a, b) => b.totalDistanceKm - a.totalDistanceKm);
+---
+<Layout titleKey="nav.gear">
+  <h1><T key="gear.title" /></h1>
+  <p class="subtitle"><T key="gear.subtitle" /></p>
+
+  <div class="card">
+    <h2><T key="gear.shoesHeading" /></h2>
+    <table>
+      <thead>
+        <tr>
+          <th><T key="gear.shoeCol" /></th>
+          <th><T key="common.type" /></th>
+          <th><T key="gear.sessionsCol" /></th>
+          <th><T key="gear.totalDistanceCol" /></th>
+          <th><T key="gear.totalTimeCol" /></th>
+          <th><T key="gear.statusCol" /></th>
+        </tr>
+      </thead>
+      <tbody>
+        {shoes.map((s) => {
+          const hasThreshold = s.kmThreshold != null;
+          const pct = hasThreshold ? Math.min(100, (s.totalDistanceKm / s.kmThreshold) * 100) : 0;
+          const overLimit = hasThreshold && s.totalDistanceKm >= s.kmThreshold;
+          return (
+            <tr style={s.retired ? 'opacity:0.55' : ''}>
+              <td>{s.label}{s.retired && <span class="badge" style="background:#767676;margin-left:8px"><T key="gear.retired" /></span>}</td>
+              <td><T key={`gear.kind.${s.kind}`} /></td>
+              <td>{s.activityCount}</td>
+              <td data-unit="distance" data-value={s.totalDistanceKm} data-digits="1">{formatDistance(s.totalDistanceKm, undefined, 1)}</td>
+              <td>{formatDuration(s.totalMovingTimeSec)}</td>
+              <td style="min-width:160px">
+                {hasThreshold ? (
+                  <>
+                    <div class="progress-bar"><div style={`width:${pct}%; background:${overLimit ? 'var(--md-error)' : 'var(--md-tertiary)'}`}></div></div>
+                    {overLimit && !s.retired && (
+                      <span class="subtitle" style="color:var(--md-error);margin:0">
+                        <T key="gear.replaceAtPrefix" /><span data-unit="distance" data-value={s.kmThreshold} data-digits="0">{formatDistance(s.kmThreshold, undefined, 0)}</span><T key="gear.replaceAtSuffix" />
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span class="subtitle" style="margin:0"><T key="gear.noLimit" /></span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+
+  {bikes.length > 0 && (
+    <div class="card">
+      <h2><T key="gear.bikesHeading" /></h2>
+      <table>
+        <thead>
+          <tr>
+            <th><T key="gear.bikeCol" /></th>
+            <th><T key="gear.sessionsCol" /></th>
+            <th><T key="gear.totalDistanceCol" /></th>
+            <th><T key="gear.totalTimeCol" /></th>
+            <th><T key="gear.componentsCol" /></th>
+          </tr>
+        </thead>
+        <tbody>
+          {bikes.map((b) => (
+            <tr>
+              <td>{b.label}</td>
+              <td>{b.activityCount}</td>
+              <td data-unit="distance" data-value={b.totalDistanceKm} data-digits="1">{formatDistance(b.totalDistanceKm, undefined, 1)}</td>
+              <td>{formatDuration(b.totalMovingTimeSec)}</td>
+              <td>{b.components?.map((c) => `${c.type}: ${c.brand ?? ''} ${c.model ?? ''}`).join(', ') || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+</Layout>

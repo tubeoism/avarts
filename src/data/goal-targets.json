@@ -1,0 +1,23 @@
+{
+  "week": {
+    "Run": { "target": 50, "unit": "km" },
+    "Ride": { "target": 80, "unit": "km" },
+    "Swim": { "target": 3, "unit": "km" },
+    "Walk": { "target": 5, "unit": "km" },
+    "Crossfit": { "target": 2, "unit": "hour" }
+  },
+  "month": {
+    "Run": { "target": 200, "unit": "km" },
+    "Ride": { "target": 300, "unit": "km" },
+    "Swim": { "target": 10, "unit": "km" },
+    "Walk": { "target": 15, "unit": "km" },
+    "Crossfit": { "target": 7, "unit": "hour" }
+  },
+  "year": {
+    "Run": { "target": 2500, "unit": "km" },
+    "Ride": { "target": 3500, "unit": "km" },
+    "Swim": { "target": 100, "unit": "km" },
+    "Walk": { "target": 150, "unit": "km" },
+    "Crossfit": { "target": 70, "unit": "hour" }
+  }
+}

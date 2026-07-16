@@ -1,0 +1,379 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { loadActivities } from '../../lib/data.mjs';
+import { formatDateTime, formatDuration, formatDistance, formatPace, formatSpeed, formatNumber, activityColor, isForeignTimezone } from '../../lib/format.js';
+import T from '../../components/T.astro';
+import 'maplibre-gl/dist/maplibre-gl.css';
+
+export async function getStaticPaths() {
+  const activities = loadActivities();
+  return activities.map((a) => ({ params: { id: String(a.id) }, props: { activity: a } }));
+}
+
+const { activity } = Astro.props;
+const isForeignTz = isForeignTimezone(activity.date, activity.timezone);
+
+// Weight Training/Workout/Yoga have no meaningful distance/pace/elevation (distanceKm is always 0,
+// elevationGain absent) - hide those stat-cards instead of showing "0.00 km"/"-" placeholders.
+// Swim additionally has no meaningful elevation (open-water GPS altitude is noisy/irrelevant).
+const NO_DISTANCE_TYPES = ['Weight Training', 'Workout', 'Yoga'];
+const NO_ELEVATION_TYPES = ['Weight Training', 'Workout', 'Yoga', 'Swim'];
+const showDistance = !NO_DISTANCE_TYPES.includes(activity.type);
+const showElevation = !NO_ELEVATION_TYPES.includes(activity.type);
+const showPower = activity.type === 'Run' || activity.type === 'Ride';
+
+// Cadence's real-world unit depends on activity type, not just the raw number - Ride's crank RPM
+// is genuinely revolutions/minute, but Run/Walk's normalizeCadence() (scripts/etl/lib/cadence.mjs,
+// see CLAUDE.md's Cadence note) already doubles strides/min into steps/min, so labeling it "rpm"
+// would be wrong on two counts (wrong unit AND implies un-doubled data). Matches the Run/Ride
+// label split already used in stats.astro/performance.astro's cadence correlation charts. Single
+// shared source (was previously duplicated identically in frontmatter and the client script
+// below).
+const CADENCE_UNIT_KEY = { Ride: 'unit.cadenceRpm', Swim: 'unit.cadenceStrokes' };
+const cadenceUnitKey = CADENCE_UNIT_KEY[activity.type] ?? 'unit.cadenceSteps';
+---
+<Layout title={activity.name}>
+  <p class="subtitle" style="margin-bottom:4px"><a href="/activities"><T key="activityDetail.backLink" /></a></p>
+  <h1>{activity.name}</h1>
+  <p class="subtitle">
+    <span class="badge" style={`background:${activityColor(activity.type)}`}><T key={`activityType.${activity.type}`} /></span>
+    &nbsp; {formatDateTime(activity.date, activity.timezone)} {activity.gear ? `· ${activity.gear}` : ''}
+    {isForeignTz && <span class="badge" style="background:#1878cd"><T key="activityDetail.foreignTz" vars={{ tz: activity.timezone }} /></span>}
+  </p>
+
+  <div class="grid">
+    {showDistance && <div class="stat-card"><div class="label"><T key="activityDetail.distance" /></div><div class="value" data-unit="distance" data-value={activity.distanceKm}>{formatDistance(activity.distanceKm)}</div></div>}
+    <div class="stat-card"><div class="label"><T key="activityDetail.movingTime" /></div><div class="value">{formatDuration(activity.movingTimeSec)}</div></div>
+    {showDistance && (activity.type === 'Ride' ? (
+      <div class="stat-card"><div class="label"><T key="activityDetail.avgSpeed" /></div><div class="value" data-unit="speed" data-value={activity.speedKmh}>{formatSpeed(activity.speedKmh)}</div></div>
+    ) : (
+      <div class="stat-card"><div class="label"><T key="activityDetail.avgPace" /></div><div class="value" data-unit="pace" data-value={activity.paceMinPerKm}>{formatPace(activity.paceMinPerKm)}</div></div>
+    ))}
+    {showElevation && <div class="stat-card"><div class="label"><T key="activityDetail.elevationGain" /></div><div class="value">{formatNumber(activity.elevationGain)} m</div></div>}
+    {activity.avgCadence && <div class="stat-card"><div class="label"><T key="activityDetail.avgCadence" /></div><div class="value">{Math.round(activity.avgCadence)} <T key={cadenceUnitKey} /></div></div>}
+    {showPower && activity.avgWatts && <div class="stat-card"><div class="label"><T key="activityDetail.avgPower" /></div><div class="value">{Math.round(activity.avgWatts)} W</div></div>}
+    {activity.avgHeartRate && <div class="stat-card"><div class="label"><T key="activityDetail.avgMaxHr" /></div><div class="value">{Math.round(activity.avgHeartRate)} / {Math.round(activity.maxHeartRate || 0)}</div></div>}
+    {activity.calories && <div class="stat-card"><div class="label"><T key="common.calories" /></div><div class="value">{formatNumber(activity.calories)}</div></div>}
+    {activity.relativeEffort && <div class="stat-card"><div class="label"><T key="activityDetail.relativeEffort" /></div><div class="value">{Math.round(activity.relativeEffort)}</div></div>}
+  </div>
+
+  {activity.description && (
+    <div class="card">
+      <h2><T key="activityDetail.notesHeading" /></h2>
+      <p>{activity.description}</p>
+    </div>
+  )}
+
+  {activity.hasStream && (
+    <>
+      <div
+        id="stream-config"
+        data-activity-id={activity.id}
+        data-stream-year={new Date(activity.date).getUTCFullYear()}
+        data-activity-type={activity.type}
+        hidden
+      ></div>
+
+      <div class="card" id="map-card" style="display:none">
+        <h2><T key="activityDetail.routeHeading" /></h2>
+        <div id="route-map" style="height:400px;border-radius:12px;overflow:hidden"></div>
+      </div>
+
+      <div class="card" id="chart-card" style="display:none">
+        <h2><T key="activityDetail.chartHeading" /></h2>
+        <div class="chart-box">
+          <canvas id="stream-chart"></canvas>
+        </div>
+      </div>
+
+      <div class="card" id="splits-card" style="display:none">
+        <h2 id="splits-title"><T key="activityDetail.splitsByKm" /></h2>
+        <table>
+          <thead>
+            <tr>
+              <th id="splits-col-label">Km</th>
+              <th><T key="common.time" /></th>
+              <th>Pace</th>
+              <th id="splits-col-hr" hidden><T key="activityDetail.avgHrCol" /></th>
+              <th id="splits-col-power" hidden><T key="activityDetail.avgPowerCol" /></th>
+            </tr>
+          </thead>
+          <tbody id="splits-body"></tbody>
+        </table>
+      </div>
+    </>
+  )}
+</Layout>
+
+<style>
+  .map-fallback {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--md-surface-container-high);
+    color: var(--md-on-surface-variant);
+    font-size: 14px;
+    text-align: center;
+    padding: 16px;
+  }
+  .chart-box {
+    position: relative;
+    height: 280px;
+  }
+  .split-marker {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--md-surface);
+    border: 2px solid var(--md-primary);
+    color: var(--md-on-surface);
+    font-size: 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+</style>
+
+<script>
+  import { onThemeChange, themeColors } from '../../lib/theme.js';
+  import { onUnitsChange, currentUnitSystem } from '../../lib/units.js';
+  import { KM_PER_MILE } from '../../lib/format.js';
+  import { t } from '../../lib/i18n.js';
+  import { currentLang, onLangChange } from '../../lib/lang.js';
+
+  const MILE_METERS = KM_PER_MILE * 1000;
+
+  // Ride/Swim splits are a fixed step (5km / 250m) shown identically regardless of the km/mile
+  // toggle - see CLAUDE.md - unlike Run/Walk's normal per-km/per-mile splits table.
+  const FIXED_STEP_KM = { Ride: 5, Swim: 0.25 };
+
+  // Same unit split as the stat-card above (see cadenceUnitKey in frontmatter) - Ride's cadence is
+  // real crank RPM, Run/Walk's is already-doubled steps/min, Swim's is strokes/min. Single shared
+  // source (was previously duplicated identically in frontmatter and here).
+  const CADENCE_UNIT_KEY = { Ride: 'unit.cadenceRpm', Swim: 'unit.cadenceStrokes' };
+
+  /** Cumulative time at every `stepMeters` boundary, linear-interpolated between the two nearest
+   * anchor points bracketing that distance - client-side counterpart to
+   * scripts/etl/lib/resample.mjs's splitsAtStep(), used as a fallback for activities recorded
+   * before this app started storing real per-mile splits (see approximateMileSplits below). */
+  function splitsAtStep(anchors, stepMeters) {
+    const totalDist = anchors[anchors.length - 1].d;
+    const totalSteps = Math.floor(totalDist / stepMeters);
+    const out = [];
+    let idx = 0;
+    for (let n = 1; n <= totalSteps; n++) {
+      const targetDist = n * stepMeters;
+      while (idx < anchors.length - 1 && anchors[idx + 1].d < targetDist) idx++;
+      const a0 = anchors[idx];
+      const a1 = anchors[Math.min(idx + 1, anchors.length - 1)];
+      const frac = a1.d > a0.d ? (targetDist - a0.d) / (a1.d - a0.d) : 0;
+      out.push({ n, timeSec: Math.round(a0.t + (a1.t - a0.t) * frac) });
+    }
+    let prevT = 0;
+    for (const s of out) { s.durationSec = s.timeSec - prevT; prevT = s.timeSec; }
+    return out;
+  }
+
+  /** Approximate mile splits for activities recorded before this app computed them directly from
+   * full-resolution GPS at ETL time (see CLAUDE.md's Records/Best-effort/Splits note) -
+   * interpolates between the EXACT cumulative times already known at each km boundary (`splits`,
+   * computed from full-resolution data) plus the activity's real total distance/time as the final
+   * anchor. This assumes roughly even pace within the km containing each mile mark, so it's an
+   * approximation, not exact - real per-mile splits (`splitsMi`) are preferred whenever the
+   * stream has them. */
+  function approximateMileSplits(splits, totalDistM, totalTimeSec) {
+    const anchors = [{ d: 0, t: 0 }, ...splits.map((s) => ({ d: s.km * 1000, t: s.timeSec })), { d: totalDistM, t: totalTimeSec }];
+    return splitsAtStep(anchors, MILE_METERS).map(({ n, timeSec, durationSec }) => ({ mi: n, timeSec, durationSec }));
+  }
+
+  function formatSplitDuration(sec) {
+    const s = Math.round(sec);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}` : `${m}:${String(ss).padStart(2, '0')}`;
+  }
+
+  // A split's own durationSec covers `stepUnits` distance units - 1 for Run/Walk's per-km/
+  // per-mile splits, but Ride's 5km / Swim's 0.25km fixed-step splits cover more (see
+  // FIXED_STEP_KM) - divide down to a true per-unit pace before formatting as m:ss.
+  function formatSplitPace(durationSec, unitSuffix, stepUnits = 1) {
+    const totalSec = Math.round(durationSec / stepUnits);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${String(s).padStart(2, '0')}/${unitSuffix}`;
+  }
+
+  const config = document.getElementById('stream-config');
+  if (config) {
+    const activityId = config.dataset.activityId;
+    const streamYear = config.dataset.streamYear;
+    const activityType = config.dataset.activityType;
+    const fixedStepKm = FIXED_STEP_KM[activityType];
+    fetch(`/data/streams/${streamYear}/${activityId}.json`)
+      .then((r) => r.json())
+      .then(async ({ points, splits, splitsMi }) => {
+        if (splits?.length > 0) {
+          const body = document.getElementById('splits-body');
+          const card = document.getElementById('splits-card');
+          const title = document.getElementById('splits-title');
+          const colLabel = document.getElementById('splits-col-label');
+          const colHr = document.getElementById('splits-col-hr');
+          const colPower = document.getElementById('splits-col-power');
+          if (body && card && title && colLabel) {
+            const lastPoint = points[points.length - 1];
+            const totalDistM = lastPoint?.d ?? splits[splits.length - 1].km * 1000;
+            const totalTimeSec = lastPoint?.t ?? splits[splits.length - 1].timeSec;
+            const realMileSplits = splitsMi?.length > 0 ? splitsMi : null;
+            const hasHrCol = splits.some((s) => s.avgHr !== undefined);
+            const hasPowerCol = splits.some((s) => s.avgWatts !== undefined);
+            if (colHr) colHr.hidden = !hasHrCol;
+            if (colPower) colPower.hidden = !hasPowerCol;
+
+            function render(system) {
+              const lang = currentLang();
+              // Ride/Swim ignore the km/mile toggle entirely - always their own fixed step.
+              const imperial = !fixedStepKm && system === 'imperial';
+              const stepUnits = fixedStepKm ?? 1;
+              if (fixedStepKm) {
+                const step = fixedStepKm < 1 ? Math.round(fixedStepKm * 1000) + 'm' : fixedStepKm + 'km';
+                title.textContent = t(lang, 'activityDetail.splitsFixedStep', { step });
+              } else {
+                title.textContent = imperial ? t(lang, 'activityDetail.splitsByMile') : t(lang, 'activityDetail.splitsByKm');
+              }
+              colLabel.textContent = imperial ? 'Mile' : 'Km';
+              const rows = imperial
+                ? realMileSplits || approximateMileSplits(splits, totalDistM, totalTimeSec)
+                : splits;
+              const unitSuffix = imperial ? 'mi' : 'km';
+              const label = (s) => (imperial ? s.mi : s.km);
+              body.innerHTML = '';
+              for (const s of rows) {
+                const tr = document.createElement('tr');
+                let html = `<td>${label(s)}</td><td>${formatSplitDuration(s.durationSec)}</td><td>${formatSplitPace(s.durationSec, unitSuffix, stepUnits)}</td>`;
+                if (hasHrCol) html += `<td>${s.avgHr !== undefined ? Math.round(s.avgHr) : '-'}</td>`;
+                if (hasPowerCol) html += `<td>${s.avgWatts !== undefined ? Math.round(s.avgWatts) : '-'}</td>`;
+                tr.innerHTML = html;
+                body.appendChild(tr);
+              }
+            }
+
+            onUnitsChange(render);
+            onLangChange(() => render(currentUnitSystem()));
+            card.style.display = '';
+          }
+        }
+
+        const geoPoints = points.filter((p) => p.lat !== undefined && p.lng !== undefined);
+        if (geoPoints.length >= 2) {
+          const mapDiv = document.getElementById('route-map');
+          const card = document.getElementById('map-card');
+          if (mapDiv && card) {
+            // Reveal the card before constructing the map - MapLibre (like Chart.js above)
+            // measures its container's size at creation time, and a still-hidden
+            // (display:none) container leaves it initialized at 0x0.
+            card.style.display = '';
+            const maplibregl = (await import('maplibre-gl')).default;
+            const c = themeColors();
+            const coords = geoPoints.map((p) => [p.lng, p.lat]);
+            const bounds = coords.reduce((b, ll) => b.extend(ll), new maplibregl.LngLatBounds(coords[0], coords[0]));
+            const map = new maplibregl.Map({
+              container: mapDiv,
+              style: 'https://tiles.openfreemap.org/styles/liberty',
+              bounds,
+              fitBoundsOptions: { padding: 30 },
+            });
+            map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+            let loaded = false;
+            map.on('error', () => {
+              if (loaded) return;
+              mapDiv.innerHTML = `<div class="map-fallback">${t(currentLang(), 'common.noMapTiles')}</div>`;
+            });
+            map.on('load', () => {
+              loaded = true;
+              map.addSource('route', {
+                type: 'geojson',
+                data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } },
+              });
+              map.addLayer({
+                id: 'route-line',
+                type: 'line',
+                source: 'route',
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 'line-color': c.primary, 'line-width': 4 },
+              });
+
+              new maplibregl.Marker({ color: c.tertiary }).setLngLat(coords[0]).addTo(map);
+              new maplibregl.Marker({ color: c.error }).setLngLat(coords[coords.length - 1]).addTo(map);
+
+              for (const s of splits ?? []) {
+                const p = points.find((pt) => pt.lat !== undefined && pt.lng !== undefined && pt.d >= s.km * 1000);
+                if (!p) continue;
+                const el = document.createElement('div');
+                el.className = 'split-marker';
+                el.textContent = String(s.km);
+                new maplibregl.Marker({ element: el }).setLngLat([p.lng, p.lat]).addTo(map);
+              }
+            });
+          }
+        }
+
+        if (points.length > 0) {
+          const canvas = document.getElementById('stream-chart');
+          const card = document.getElementById('chart-card');
+          const hasHr = points.some((p) => p.hr !== undefined);
+          // Swim elevation is noisy open-water GPS altitude, not a meaningful metric - always
+          // suppressed regardless of whether the stream happens to have `ele` values.
+          const hasEle = activityType !== 'Swim' && points.some((p) => p.ele !== undefined);
+          const hasCad = points.some((p) => p.cad !== undefined);
+          const hasWatts = points.some((p) => p.watts !== undefined);
+          if (canvas instanceof HTMLCanvasElement && card && (hasHr || hasEle || hasCad || hasWatts)) {
+            const { default: Chart } = await import('chart.js/auto');
+            const labels = points.map((p) => Math.round(p.t / 60));
+            const hrData = hasHr ? points.map((p) => p.hr ?? null) : null;
+            const eleData = hasEle ? points.map((p) => p.ele ?? null) : null;
+            const cadData = hasCad ? points.map((p) => p.cad ?? null) : null;
+            const wattsData = hasWatts ? points.map((p) => p.watts ?? null) : null;
+            // Reveal the card before constructing the chart - Chart.js sizes itself from the
+            // canvas's parent at creation time, and a still-hidden (display:none) container
+            // left it rendering into a zero-size canvas that never picked up a resize.
+            card.style.display = '';
+            // Destroy + recreate on theme change rather than mutating colors in place -
+            // Chart.js did not reliably repaint when only dataset/scale colors were reassigned.
+            let chart;
+            function renderChart(c) {
+              const lang = currentLang();
+              chart?.destroy();
+              const datasets = [];
+              // Every series shares one Y axis (instead of the usual dual-axis split) so their
+              // shapes read at a comparable scale, per product spec - not because bpm/m/rpm/W are
+              // meant to share a single meaningful number line.
+              if (hasHr) datasets.push({ label: t(lang, 'activityDetail.hrSeriesLabel'), data: hrData, borderColor: c.error, pointRadius: 0, yAxisID: 'y', spanGaps: true });
+              if (hasEle) datasets.push({ label: t(lang, 'activityDetail.elevationSeriesLabel'), data: eleData, borderColor: c.secondary, pointRadius: 0, yAxisID: 'y', spanGaps: true });
+              if (hasCad) datasets.push({ label: t(lang, 'activityDetail.cadenceSeriesLabel', { unit: t(lang, CADENCE_UNIT_KEY[activityType] ?? 'unit.cadenceSteps') }), data: cadData, borderColor: c.tertiary, pointRadius: 0, yAxisID: 'y', spanGaps: true });
+              if (hasWatts) datasets.push({ label: t(lang, 'activityDetail.powerSeriesLabel'), data: wattsData, borderColor: c.primary, pointRadius: 0, yAxisID: 'y', spanGaps: true });
+              chart = new Chart(canvas, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: { legend: { labels: { color: c.onSurface } } },
+                  scales: {
+                    x: { title: { display: true, text: t(lang, 'activityDetail.minutesAxis'), color: c.onSurfaceVariant }, ticks: { color: c.onSurfaceVariant }, grid: { display: false } },
+                    y: { position: 'left', ticks: { color: c.onSurfaceVariant }, grid: { color: c.outlineVariant } },
+                  },
+                },
+              });
+            }
+            onThemeChange(renderChart);
+            onLangChange(() => renderChart(themeColors()));
+          }
+        }
+      })
+      .catch(() => {});
+  }
+</script>

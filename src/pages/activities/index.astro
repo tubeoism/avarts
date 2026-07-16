@@ -1,0 +1,414 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { loadActivities } from '../../lib/data.mjs';
+import { typeBreakdown } from '../../lib/stats.mjs';
+import { t, DEFAULT_LANG, activityTypeLabel } from '../../lib/i18n.js';
+import T from '../../components/T.astro';
+
+const activities = loadActivities();
+const types = typeBreakdown(activities).map((ty) => ty.type);
+
+// split around the Pace/Tốc độ column, which sits between Thời gian and HR TB - filterable but not
+// sortable (a lower pace is FASTER while a lower speed is SLOWER, so a single sorted column mixing
+// Run's pace and Ride's speed would be actively misleading; filtering both against the same
+// min/max range is fine since they're compared independently per row, see applyFilters()).
+const numericColsBeforePace = [
+  { key: 'distanceKm', labelKey: 'common.distance', format: 'distance', hint: 'km' },
+  { key: 'movingTimeSec', labelKey: 'common.time', format: 'duration', hint: 'h:mm:ss' },
+];
+const numericColsAfterPace = [
+  { key: 'avgHeartRate', labelKey: 'activities.avgHrCol', format: 'number', hint: 'bpm' },
+  { key: 'maxHeartRate', labelKey: 'activities.maxHrCol', format: 'number', hint: 'bpm' },
+  { key: 'elevationGain', labelKey: 'activities.elevationCol', format: 'number', hint: 'm' },
+  { key: 'calories', labelKey: 'common.calories', format: 'number', hint: '' },
+  { key: 'relativeEffort', labelKey: 'activities.relEffortCol', format: 'number', hint: '' },
+];
+const monthAbbr = t(DEFAULT_LANG, 'activities.monthAbbr');
+---
+<Layout titleKey="nav.activities">
+  <h1><T key="activities.title" /></h1>
+  <p class="subtitle"><T key="activities.subtitleCount" vars={{ count: activities.length }} /></p>
+
+  <div class="card">
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable-th"><div class="th-inner" data-sort-key="date"><T key="common.date" /> <span class="sort-arrow" data-arrow="date"></span></div></th>
+            <th><T key="common.name" /></th>
+            <th><T key="common.type" /></th>
+            {numericColsBeforePace.map((c) => (
+              <th class="sortable-th"><div class="th-inner" data-sort-key={c.key}><T key={c.labelKey} /> <span class="sort-arrow" data-arrow={c.key}></span></div></th>
+            ))}
+            <th><T key="activities.paceOrSpeedCol" /></th>
+            {numericColsAfterPace.map((c) => (
+              <th class="sortable-th"><div class="th-inner" data-sort-key={c.key}><T key={c.labelKey} /> <span class="sort-arrow" data-arrow={c.key}></span></div></th>
+            ))}
+          </tr>
+          <tr class="filter-row">
+            <td>
+              <div class="filter-cell">
+                <select data-year><option value="all" data-i18n="activities.allYears">{t(DEFAULT_LANG, 'activities.allYears')}</option></select>
+                <select data-month>
+                  <option value="all" data-i18n="activities.allMonths">{t(DEFAULT_LANG, 'activities.allMonths')}</option>
+                  {Array.from({ length: 12 }, (_, i) => <option value={i + 1} data-i18n={`activities.monthAbbr.${i}`}>{monthAbbr[i]}</option>)}
+                </select>
+              </div>
+            </td>
+            <td><input type="search" data-name-search data-i18n-placeholder="activities.searchPlaceholder" placeholder={t(DEFAULT_LANG, 'activities.searchPlaceholder')} /></td>
+            <td>
+              <select data-type-select>
+                <option value="all" data-i18n="common.all">{t(DEFAULT_LANG, 'common.all')}</option>
+                {types.map((ty) => <option value={ty} data-i18n={`activityType.${ty}`}>{activityTypeLabel(DEFAULT_LANG, ty)}</option>)}
+              </select>
+            </td>
+            {numericColsBeforePace.map((c) => (
+              <td>
+                <div class="filter-cell">
+                  <input type="text" data-min-input data-field={c.key} data-format={c.format} placeholder={`Min ${c.hint}`} />
+                  <input type="text" data-max-input data-field={c.key} data-format={c.format} placeholder={`Max ${c.hint}`} />
+                </div>
+              </td>
+            ))}
+            <td>
+              <div class="filter-cell">
+                <input type="text" data-min-input data-field="paceMinPerKm" data-format="pace" placeholder="Min m:ss/km" />
+                <input type="text" data-max-input data-field="paceMinPerKm" data-format="pace" placeholder="Max m:ss/km" />
+              </div>
+            </td>
+            {numericColsAfterPace.map((c) => (
+              <td>
+                <div class="filter-cell">
+                  <input type="text" data-min-input data-field={c.key} data-format={c.format} placeholder={`Min ${c.hint}`} />
+                  <input type="text" data-max-input data-field={c.key} data-format={c.format} placeholder={`Max ${c.hint}`} />
+                </div>
+              </td>
+            ))}
+          </tr>
+        </thead>
+        <tbody id="activity-rows"></tbody>
+      </table>
+    </div>
+    <div id="empty" class="empty-state" style="display:none"><T key="activities.emptyState" /></div>
+    <div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap">
+      <button id="prev-page"><T key="activities.prevPage" /></button>
+      <span id="page-label" class="subtitle" style="margin:0"></span>
+      <button id="next-page"><T key="activities.nextPage" /></button>
+      <label class="subtitle" style="margin:0 0 0 12px"><T key="activities.showLabel" /></label>
+      <select id="page-size">
+        <option value="30">30</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>
+      <span class="subtitle" style="margin:0"><T key="activities.rowsPerPage" /></span>
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .sortable-th .th-inner {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .sortable-th .th-inner:hover { color: var(--md-on-surface); }
+  .sort-arrow { font-size: 10px; color: var(--md-primary); min-width: 8px; display: inline-block; }
+  .filter-row td {
+    padding: 6px 8px;
+    background: var(--md-surface-container-low);
+    border-top: 1px solid var(--md-outline-variant);
+    text-transform: none;
+    font-weight: normal;
+    vertical-align: top;
+  }
+  .filter-cell {
+    display: flex;
+    gap: 4px;
+  }
+  .filter-row select, .filter-row input {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+  .filter-row input[type='text'], .filter-row input[type='search'] {
+    min-width: 64px;
+  }
+
+  @media (max-width: 600px) {
+    .filter-cell {
+      flex-direction: column;
+      gap: 3px;
+    }
+    .filter-row select, .filter-row input {
+      font-size: 13px;
+      padding: 7px 8px;
+      min-height: 34px;
+    }
+    .filter-row input[type='text'], .filter-row input[type='search'] {
+      min-width: 84px;
+    }
+  }
+</style>
+
+<script>
+  import { formatDate, formatDuration, formatDistance, formatPace, formatSpeed, formatNumber, activityColor, dateParts, KM_PER_MILE, toMiles } from '../../lib/format.js';
+  import { fetchJsonWithRetry } from '../../lib/fetchJson.js';
+  import { currentUnitSystem } from '../../lib/units.js';
+  import { t, activityTypeLabel } from '../../lib/i18n.js';
+  import { currentLang } from '../../lib/lang.js';
+
+  let allActivities = [];
+  let filtered = [];
+  let currentType = 'all';
+  let currentYear = 'all';
+  let currentMonth = 'all';
+  let nameSearch = '';
+  let sortField = 'date';
+  let sortDir = 'desc';
+  const ranges = {}; // field -> { min?: number, max?: number }
+  let pageSize = 50;
+  let page = 0;
+
+  const rowsEl = document.getElementById('activity-rows');
+  const emptyEl = document.getElementById('empty');
+  const pageLabel = document.getElementById('page-label');
+
+  function cell(v, suffix = '') {
+    return v === undefined || v === null ? '-' : `${formatNumber(v)}${suffix}`;
+  }
+
+  // a.name/a.type land in an innerHTML template literal below (not Astro's auto-escaped JSX),
+  // so unlike every other page in the app they need manual escaping - otherwise an activity name
+  // containing '<' or '&' renders broken (or worse, executes) instead of showing literally.
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  // "1:23:45" or "23:45" (matches formatDuration's own output) -> total seconds.
+  function parseDuration(str) {
+    const parts = str.trim().split(':').map(Number);
+    if (!parts.length || parts.some((n) => !Number.isFinite(n))) return undefined;
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parts[0];
+  }
+
+  // "5:30" (matches formatPace's m:ss, minus the /km suffix) -> decimal minutes per km.
+  function parsePaceValue(str) {
+    const parts = str.trim().split(':').map(Number);
+    if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n))) return undefined;
+    return parts[0] + parts[1] / 60;
+  }
+
+  // Filter inputs accept the same format the column displays (h:mm:ss for duration, m:ss for
+  // pace, current km/mile unit system for distance) rather than a raw number in an arbitrary unit
+  // - see CLAUDE.md. `ranges` always stores distance in km regardless of what the user typed, same
+  // as `a.distanceKm` itself - the km/mile toggle only changes how a number is READ and DISPLAYED,
+  // never what's actually stored, matching the data-unit/repaintUnitNodes convention used
+  // elsewhere in the app.
+  function parseFilterValue(str, format) {
+    if (str === '') return undefined;
+    if (format === 'duration') return parseDuration(str);
+    if (format === 'pace') return parsePaceValue(str);
+    const n = Number(str);
+    if (!Number.isFinite(n)) return undefined;
+    if (format === 'distance' && currentUnitSystem() === 'imperial') return n * KM_PER_MILE;
+    return n;
+  }
+
+  function updateSortArrows() {
+    document.querySelectorAll('.sort-arrow').forEach((el) => {
+      el.textContent = el.dataset.arrow === sortField ? (sortDir === 'asc' ? '▲' : '▼') : '';
+    });
+  }
+
+  function render() {
+    if (!rowsEl || !emptyEl || !pageLabel) return;
+    const start = page * pageSize;
+    const pageItems = filtered.slice(start, start + pageSize);
+    rowsEl.innerHTML = '';
+    emptyEl.style.display = filtered.length === 0 ? 'block' : 'none';
+    const lang = currentLang();
+    for (const a of pageItems) {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', () => { window.location.href = `/activities/${a.id}`; });
+      const system = currentUnitSystem();
+      const speedOrPace = a.type === 'Ride' ? formatSpeed(a.speedKmh, system) : formatPace(a.paceMinPerKm, system);
+      tr.innerHTML = `
+        <td>${formatDate(a.date, a.timezone)}</td>
+        <td>${escapeHtml(a.name ?? '')}</td>
+        <td><span class="badge" style="background:${activityColor(a.type)}">${escapeHtml(activityTypeLabel(lang, a.type))}</span></td>
+        <td>${formatDistance(a.distanceKm, system)}</td>
+        <td>${formatDuration(a.movingTimeSec)}</td>
+        <td>${a.distanceKm ? speedOrPace : '-'}</td>
+        <td>${cell(a.avgHeartRate)}</td>
+        <td>${cell(a.maxHeartRate)}</td>
+        <td>${cell(a.elevationGain, ' m')}</td>
+        <td>${cell(a.calories)}</td>
+        <td>${cell(a.relativeEffort)}</td>
+      `;
+      rowsEl.appendChild(tr);
+    }
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    pageLabel.textContent = t(lang, 'activities.pageLabel', { page: page + 1, totalPages, count: filtered.length });
+    updateSortArrows();
+  }
+
+  function compareValues(a, b, field, dir) {
+    if (field === 'date') {
+      return dir * a.date.localeCompare(b.date);
+    }
+    const av = a[field];
+    const bv = b[field];
+    if (av === undefined && bv === undefined) return 0;
+    if (av === undefined) return 1;
+    if (bv === undefined) return -1;
+    return dir * (av - bv);
+  }
+
+  function applyFilters() {
+    filtered = allActivities.filter((a) => {
+      if (currentType !== 'all' && a.type !== currentType) return false;
+      if (currentYear !== 'all' || currentMonth !== 'all') {
+        const { year, month } = dateParts(a.date, a.timezone);
+        if (currentYear !== 'all' && year !== Number(currentYear)) return false;
+        if (currentMonth !== 'all' && month !== Number(currentMonth)) return false;
+      }
+      if (nameSearch && !(a.name ?? '').toLowerCase().includes(nameSearch)) return false;
+      for (const [field, range] of Object.entries(ranges)) {
+        const v = a[field];
+        if (v === undefined) return false;
+        if (range.min !== undefined && v < range.min) return false;
+        if (range.max !== undefined && v > range.max) return false;
+      }
+      return true;
+    });
+    const dir = sortDir === 'asc' ? 1 : -1;
+    filtered.sort((a, b) => compareValues(a, b, sortField, dir));
+    page = 0;
+    render();
+  }
+
+  // sorting: click a column's label area
+  document.querySelectorAll('[data-sort-key]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.sortKey;
+      if (sortField === key) {
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortField = key;
+        sortDir = 'desc';
+      }
+      applyFilters();
+    });
+  });
+
+  document.querySelector('[data-name-search]')?.addEventListener('input', (e) => {
+    nameSearch = e.target.value.trim().toLowerCase();
+    applyFilters();
+  });
+
+  document.querySelectorAll('[data-min-input], [data-max-input]').forEach((input) => {
+    const field = input.dataset.field;
+    const format = input.dataset.format;
+    const isMin = input.hasAttribute('data-min-input');
+    input.addEventListener('input', (e) => {
+      const parsed = parseFilterValue(e.target.value, format);
+      const range = ranges[field] || {};
+      if (isMin) range.min = parsed;
+      else range.max = parsed;
+      if (range.min === undefined && range.max === undefined) delete ranges[field];
+      else ranges[field] = range;
+      applyFilters();
+    });
+  });
+
+  document.querySelector('[data-year]')?.addEventListener('change', (e) => {
+    currentYear = e.target.value;
+    applyFilters();
+  });
+  document.querySelector('[data-month]')?.addEventListener('change', (e) => {
+    currentMonth = e.target.value;
+    applyFilters();
+  });
+  document.querySelector('[data-type-select]')?.addEventListener('change', (e) => {
+    currentType = e.target.value;
+    applyFilters();
+  });
+
+  document.getElementById('page-size')?.addEventListener('change', (e) => {
+    pageSize = Number(e.target.value);
+    page = 0;
+    render();
+  });
+
+  document.getElementById('prev-page')?.addEventListener('click', () => {
+    if (page > 0) { page--; render(); }
+  });
+  document.getElementById('next-page')?.addEventListener('click', () => {
+    if ((page + 1) * pageSize < filtered.length) { page++; render(); }
+  });
+
+  // Reformats the distance min/max filter inputs to show their stored km value converted into
+  // whichever unit system is currently active, and updates their placeholder unit hint - the
+  // underlying `ranges.distanceKm` (always km) never changes here, only how it's displayed, same
+  // as the rest of the app's data-unit/repaintUnitNodes convention.
+  function syncDistanceFilterInputs() {
+    const system = currentUnitSystem();
+    const unitLabel = system === 'imperial' ? 'mi' : 'km';
+    document.querySelectorAll('[data-field="distanceKm"][data-format="distance"]').forEach((input) => {
+      const isMin = input.hasAttribute('data-min-input');
+      input.placeholder = `${isMin ? 'Min' : 'Max'} ${unitLabel}`;
+      const km = isMin ? ranges.distanceKm?.min : ranges.distanceKm?.max;
+      input.value = km === undefined ? '' : String(Math.round((system === 'imperial' ? toMiles(km) : km) * 100) / 100);
+    });
+  }
+
+  // Re-render in place (not applyFilters, which would reset pagination back to page 0) whenever
+  // the unit toggle fires - render() already reads currentUnitSystem() fresh each call.
+  document.addEventListener('unitschange', () => {
+    syncDistanceFilterInputs();
+    render();
+  });
+  // Same idea for language - render() reads currentLang() fresh each call too (activity-type
+  // badges, page label).
+  document.addEventListener('langchange', () => render());
+  syncDistanceFilterInputs();
+
+  fetchJsonWithRetry('/data/activities.json')
+    .then((data) => {
+      allActivities = [...data].reverse();
+      const years = [...new Set(allActivities.map((a) => dateParts(a.date, a.timezone).year))].sort((a, b) => b - a);
+      const yearSelect = document.querySelector('[data-year]');
+      for (const y of years) {
+        const opt = document.createElement('option');
+        opt.value = String(y);
+        opt.textContent = String(y);
+        yearSelect?.appendChild(opt);
+      }
+      applyFilters();
+    })
+    .catch((err) => {
+      console.error('Failed to load activities.json', err);
+      const tbody = document.getElementById('activity-rows');
+      if (tbody) {
+        const lang = currentLang();
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 99;
+        td.textContent = t(lang, 'common.loadError');
+        const retryBtn = document.createElement('button');
+        retryBtn.textContent = t(lang, 'common.retry');
+        retryBtn.addEventListener('click', () => location.reload());
+        td.appendChild(retryBtn);
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      }
+    });
+</script>

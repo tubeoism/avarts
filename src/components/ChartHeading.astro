@@ -1,0 +1,32 @@
+---
+// Chart/section heading with an optional "?" help toggle. The description goes in the slot
+// (usually <T> spans, so it stays zero-flash bilingual like everything else - see T.astro) and is
+// hidden until the button is clicked. This replaces the always-visible caption paragraphs that
+// used to sit under every chart. The button's aria-label uses the accepted attribute exception
+// from the i18n migration (repaintLangNodes) since attributes can't hold <span> children.
+import T from './T.astro';
+import { t, DEFAULT_LANG } from '../lib/i18n.js';
+const { titleKey } = Astro.props;
+const hasHelp = Astro.slots.has('default');
+---
+<div class="chart-heading">
+  <h2><T key={titleKey} />{hasHelp && (
+    <button type="button" class="chart-help-btn" aria-expanded="false"
+      aria-label={t(DEFAULT_LANG, 'common.chartHelpAriaLabel')}
+      data-i18n-aria-label="common.chartHelpAriaLabel">?</button>
+  )}</h2>
+  {hasHelp && <p class="subtitle chart-help-panel" hidden><slot /></p>}
+</div>
+
+<script>
+  // One delegated listener for every help button on the page (Astro dedupes component scripts).
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.chart-help-btn');
+    if (!btn) return;
+    const panel = btn.closest('.chart-heading')?.querySelector('.chart-help-panel');
+    if (!panel) return;
+    const open = panel.hidden;
+    panel.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+  });
+</script>
