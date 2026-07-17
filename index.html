@@ -3,6 +3,19 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+  (function () {
+    function isNightGmt7() {
+      var h = new Date(Date.now() + 7 * 3600000).getUTCHours();
+      return h >= 19 || h < 6;
+    }
+    function applyTheme() {
+      document.documentElement.setAttribute('data-theme', isNightGmt7() ? 'dark' : 'light');
+    }
+    applyTheme();
+    setInterval(applyTheme, 60000);
+  })();
+</script>
 <title>Avarts Analytics</title>
 <meta name="description" content="Ứng dụng cá nhân theo dõi &amp; phân tích tiến độ tập luyện, dựng từ dữ liệu bulk export của Strava." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%2397360c' x='1.5' y='1.5' width='29' height='29' rx='8'/%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' d='M7.5 21.5 L12 21.5 L15 10.5 L18 18 L22.5 8.5'/%3E%3Ccircle fill='%23fff' cx='22.5' cy='8.5' r='1.9'/%3E%3C/svg%3E" />
@@ -17,17 +30,15 @@
     --accent-dark: #c73d00;
     --accent-soft: #fef1e9;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #17140f;
-      --surface: #211f1c;
-      --border: #362f28;
-      --text: #f5f0ea;
-      --text-muted: #b5aca2;
-      --accent: #ff6d33;
-      --accent-dark: #ff8c5a;
-      --accent-soft: #2c2018;
-    }
+  :root[data-theme="dark"] {
+    --bg: #17140f;
+    --surface: #211f1c;
+    --border: #362f28;
+    --text: #f5f0ea;
+    --text-muted: #b5aca2;
+    --accent: #ff6d33;
+    --accent-dark: #ff8c5a;
+    --accent-soft: #2c2018;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
